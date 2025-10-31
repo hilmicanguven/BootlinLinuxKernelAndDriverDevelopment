@@ -1,0 +1,126 @@
+=> printenv 
+addr_fit=0x90000000
+arch=arm
+args_all=setenv optargs ${optargs} earlycon=ns16550a,mmio32,0x02800000 ${mtdparts}
+args_mmc=run finduuid;setenv bootargs console=${console} ${optargs} root=PARTUUID=${uuid} rw rootfstype=${mmcrootfstype}
+args_usb=run finduuid;setenv bootargs console=${console} ${optargs} root=PARTUUID=${uuid} rw rootfstype=${mmcrootfstype}
+baudrate=115200
+board=am62x
+board_name=am62x_play
+board_rev=02
+board_serial=SSSS
+board_software_revision=01
+boot=mmc
+boot_a_script=load ${devtype} ${devnum}:${distro_bootpart} ${scriptaddr} ${prefix}${script}; source ${scriptaddr}
+boot_efi_binary=load ${devtype} ${devnum}:${distro_bootpart} ${kernel_addr_r} efi/boot/bootaa64.efi; if fdt addr ${fdt_addr_r}; then bootefi ${kernel_addr_r} ${fdt_addr_r};else bootefi ${kernel_addr_r} ${fdtcontroladdr};fi
+boot_efi_bootmgr=if fdt addr ${fdt_addr_r}; then bootefi bootmgr ${fdt_addr_r};else bootefi bootmgr;fi
+boot_extlinux=sysboot ${devtype} ${devnum}:${distro_bootpart} any ${scriptaddr} ${prefix}${boot_syslinux_conf}
+boot_fdt=try
+boot_fit=0
+boot_net_usb_start=usb start
+boot_prefixes=/ /boot/
+boot_script_dhcp=boot.scr.uimg
+boot_scripts=boot.scr.uimg boot.scr
+boot_syslinux_conf=extlinux/extlinux.conf
+boot_targets=mmc1 mmc0 pxe dhcp linux 
+bootargs=root=/dev/nfs rw ip=192.168.1.55:::::eth0 console=ttyS2,115200n8 nfsroot=192.168.1.100:/home/ubuntu/codes/bootlin/linux-kernel-beagleplay-labs/modules/nfsroot,nfsvers=3,tcp
+bootcmd=tftp 0x80000000 Image.gz; tftp 0x83000000 k3-am625-beagleplay-custom.dtb; booti 0x80000000 - 0x83000000
+bootcmd_dhcp=setenv devtype dhcp; run boot_net_usb_start; if dhcp ${scriptaddr} ${boot_script_dhcp}; then source ${scriptaddr}; fi;setenv efi_fdtfile ${fdtfile}; setenv efi_old_vci ${bootp_vci};setenv efi_old_arch ${bootp_arch};setenv bootp_vci PXEClient:Arch:00011:UNDI:003000;setenv bootp_arch 0xb;if dhcp ${kernel_addr_r}; then tftpboot ${fdt_addr_r} dtb/${efi_fdtfile};if fdt addr ${fdt_addr_r}; then bootefi ${kernel_addr_r} ${fdt_addr_r}; else bootefi ${kernel_addr_r} ${fdtcontroladdr};fi;fi;setenv bootp_vci ${efi_old_vci};setenv bootp_arch ${efi_old_arch};setenv efi_fdtfile;setenv efi_old_arch;setenv efi_old_vci;
+bootcmd_linux=if test "${android_boot}" -eq 0; then;run findfdt; run envboot; run init_${boot};if test ${boot_fit} -eq 1; then;run get_fit_${boot}; run get_fit_${boot}; run get_overlaystring; run run_fit;else;run get_kern_${boot}; run get_fdt_${boot}; run get_overlay_${boot}; run run_kern;fi;fi
+bootcmd_mmc0=devnum=0; run mmc_boot
+bootcmd_mmc1=devnum=1; run mmc_boot
+bootcmd_pxe=run boot_net_usb_start; dhcp; if pxe get; then pxe boot; fi
+bootdelay=2
+bootdir=/boot
+bootenvfile=uEnv.txt
+bootm_size=0x10000000
+bootpart=1:2
+bootscript=echo Running bootscript from mmc${mmcdev} ...; source ${loadaddr}
+console=ttyS2,115200n8
+cpu=armv8
+default_device_tree=k3-am625-beagleplay.dtb
+dfu_alt_info_emmc=rawemmc raw 0 0x800000 mmcpart 1;rootfs part 0 1 mmcpart 0;tiboot3.bin.raw raw 0x0 0x400 mmcpart 1;tispl.bin.raw raw 0x400 0x1000 mmcpart 1;u-boot.img.raw raw 0x1400 0x2000 mmcpart 1;u-env.raw raw 0x3400 0x100 mmcpart 1;sysfw.itb.raw raw 0x3600 0x800 mmcpart 1
+dfu_alt_info_mmc=boot part 1 1;rootfs part 1 2;tiboot3.bin fat 1 1;tispl.bin fat 1 1;u-boot.img fat 1 1;uEnv.txt fat 1 1;sysfw.itb fat 1 1
+dfu_alt_info_ospi=tiboot3.bin raw 0x0 0x080000;tispl.bin raw 0x080000 0x200000;u-boot.img raw 0x280000 0x400000;u-boot-env raw 0x680000 0x020000;sysfw.itb raw 0x6c0000 0x100000;rootfs raw 0x800000 0x3800000
+dfu_alt_info_ram=tispl.bin ram 0x80080000 0x200000;u-boot.img ram 0x81000000 0x400000
+distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done
+dtboaddr=0x89000000
+efi_dtb_prefixes=/ /dtb/ /dtb/current/
+emmc_erase_boot0=mmc dev 0 1; mmc erase 0 0x2400; 
+envboot=mmc dev ${mmcdev}; if mmc rescan; then echo SD/MMC found on device ${mmcdev};if run loadbootscript; then run bootscript;else if run loadbootenv; then echo Loaded env from ${bootenvfile};run importbootenv;fi;if test -n $uenvcmd; then echo Running uenvcmd ...;run uenvcmd;fi;fi;fi;
+ethact=ethernet@8000000ethernet@8000000port@1
+ethaddr=34:08:e1:84:e6:c2
+fdt_addr_r=0x88000000
+fdtaddr=0x88000000
+fdtcontroladdr=f7ec3e60
+fdtoverlay_addr_r=0x80200000
+fileaddr=83000000
+filesize=9d65
+findfdt=setenv name_fdt ${default_device_tree};if test $board_name = am62x_skevm; then setenv name_fdt k3-am625-sk.dtb; fi;if test $board_name = am62x_lp_skevm; then setenv name_fdt k3-am62x-lp-sk.dtb; fi;if test $board_name = am62x_play; then setenv name_fdt k3-am625-beagleplay.dtb; fi;setenv fdtfile ${name_fdt}
+finduuid=part uuid ${boot} ${bootpart} uuid
+get_fdt_mmc=load mmc ${bootpart} ${fdtaddr} ${bootdir}/${name_fdt}
+get_fdt_usb=load usb ${bootpart} ${fdtaddr} ${bootdir}/${fdtfile}
+get_fit_mmc=load mmc ${bootpart} ${addr_fit} ${bootdir}/${name_fit}
+get_fit_usb=load usb ${bootpart} ${addr_fit} ${bootdir}/${name_fit}
+get_kern_mmc=load mmc ${bootpart} ${loadaddr} ${bootdir}/${name_kern}
+get_kern_usb=load usb ${bootpart} ${loadaddr} ${bootdir}/${name_kern}
+get_overlay_mmc=fdt address ${fdtaddr};fdt resize 0x100000;for overlay in $name_overlays;do;load mmc ${bootpart} ${dtboaddr} ${bootdir}/${overlay} && fdt apply ${dtboaddr};done;
+get_overlay_usb=fdt address ${fdtaddr};fdt resize 0x100000;for overlay in $name_overlays;do;load usb ${bootpart} ${dtboaddr} ${bootdir}/${overlay} && fdt apply ${dtboaddr};done;
+get_overlaystring=for overlay in $name_overlays;do;setenv overlaystring ${overlaystring}'#'${overlay};done;
+importbootenv=echo Importing environment from mmc${mmcdev} ...; env import -t ${loadaddr} ${filesize}
+init_mmc=run args_all args_mmc
+init_usb=run args_all args_usb
+ip_addr=
+paddr=192.168.1.55
+kernel_addr_r=0x82000000
+kernel_comp_addr_r=0x85000000
+kernel_comp_size=0x2000000
+load_efi_dtb=load ${devtype} ${devnum}:${distro_bootpart} ${fdt_addr_r} ${prefix}${efi_fdtfile}
+loadaddr=0x82000000
+loadbootenv=fatload mmc ${mmcdev} ${loadaddr} ${bootenvfile}
+loadbootscript=load mmc ${mmcdev} ${loadaddr} boot.scr
+loadfdt=load ${devtype} ${bootpart} ${fdtaddr} ${bootdir}/${fdtfile}
+loadimage=load ${devtype} ${bootpart} ${loadaddr} ${bootdir}/${bootfile}
+mmc_boot=if mmc dev ${devnum}; then devtype=mmc; run scan_dev_for_boot_part; fi
+mmcboot=mmc dev ${mmcdev}; devnum=${mmcdev}; devtype=mmc; if mmc rescan; then echo SD/MMC found on device ${mmcdev};if run loadimage; then run args_mmc; if test ${boot_fit} -eq 1; then run run_fit; else run mmcloados;fi;fi;fi;
+mmcdev=1
+mmcloados=if test ${boot_fdt} = yes || test ${boot_fdt} = try; then if run loadfdt; then bootz ${loadaddr} - ${fdtaddr}; else if test ${boot_fdt} = try; then bootz; else echo WARN: Cannot load the DT; fi; fi; else bootz; fi;
+mmcrootfstype=ext4 rootwait
+name_fit=fitImage
+name_kern=Image
+partitions=uuid_disk=${uuid_gpt_disk};name=rootfs,start=0,size=-,uuid=${uuid_gpt_rootfs}
+partitions_android=uuid_disk=${uuid_gpt_disk};name=bootloader,start=5M,size=8M,uuid=${uuid_gpt_bootloader};name=tiboot3,start=4M,size=1M,uuid=${uuid_gpt_tiboot3};name=uboot-env,start=13M,size=512K,uuid=${uuid_gpt_env};name=misc,start=13824K,size=512K,uuid=${uuid_gpt_misc};name=boot_a,size=40M,uuid=${uuid_gpt_boot_a};name=boot_b,size=40M,uuid=${uuid_gpt_boot_b};name=dtbo_a,size=8M,uuid=${uuid_gpt_dtbo_a};name=dtbo_b,size=8M,uuid=${uuid_gpt_dtbo_b};name=vbmeta_a,size=64K,uuid=${uuid_gpt_vbmeta_a};name=vbmeta_b,size=64K,uuid=${uuid_gpt_vbmeta_b};name=super,size=4608M,uuid=${uuid_gpt_super};name=metadata,size=16M,uuid=${uuid_gpt_metadata};name=persist,size=32M,uuid=${uuid_gpt_persist};name=userdata,size=-,uuid=${uuid_gpt_userdata}
+play_eeprom_dump=i2c dev ${play_eeprom_i2c_dev}; i2c md ${play_eeprom_i2c_addr} 0x00.2 40; 
+play_eeprom_erase=i2c dev ${play_eeprom_i2c_dev}; i2c md ${play_eeprom_i2c_addr} 0x00.2 40; gpio clear ${play_eeprom_wp_gpio}; i2c mw ${play_eeprom_i2c_addr} 0x00.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x01.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x02.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x03.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x04.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x05.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x06.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x07.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x08.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x09.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0a.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0b.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0c.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0d.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0e.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x0f.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x10.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x11.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x12.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x13.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x14.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x15.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x16.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x17.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x18.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x19.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1a.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1b.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1c.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1d.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1e.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x1f.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x20.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x21.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x22.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x23.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x24.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x25.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x26.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x27.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x28.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x29.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2a.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2b.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2c.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2d.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2e.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x2f.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x30.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x31.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x32.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x33.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x34.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x35.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x36.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x37.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x38.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x39.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3a.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3b.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3c.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3d.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3e.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3f.2 ff; gpio set ${play_eeprom_wp_gpio}; i2c md ${play_eeprom_i2c_addr} 0x00.2 40; 
+play_eeprom_i2c_addr=0x50;
+play_eeprom_i2c_dev=0;
+play_eeprom_production_program=i2c dev ${play_eeprom_i2c_dev}; i2c md ${play_eeprom_i2c_addr} 0x00.2 40; gpio clear ${play_eeprom_wp_gpio}; i2c mw ${play_eeprom_i2c_addr} 0x00.2 aa; i2c mw ${play_eeprom_i2c_addr} 0x01.2 55; i2c mw ${play_eeprom_i2c_addr} 0x02.2 33; i2c mw ${play_eeprom_i2c_addr} 0x03.2 ee; i2c mw ${play_eeprom_i2c_addr} 0x04.2 01; i2c mw ${play_eeprom_i2c_addr} 0x05.2 37; i2c mw ${play_eeprom_i2c_addr} 0x06.2 00; i2c mw ${play_eeprom_i2c_addr} 0x07.2 10; i2c mw ${play_eeprom_i2c_addr} 0x08.2 2e; i2c mw ${play_eeprom_i2c_addr} 0x09.2 00; i2c mw ${play_eeprom_i2c_addr} 0x0a.2 42; i2c mw ${play_eeprom_i2c_addr} 0x0b.2 45; i2c mw ${play_eeprom_i2c_addr} 0x0c.2 41; i2c mw ${play_eeprom_i2c_addr} 0x0d.2 47; i2c mw ${play_eeprom_i2c_addr} 0x0e.2 4c; i2c mw ${play_eeprom_i2c_addr} 0x0f.2 45; i2c mw ${play_eeprom_i2c_addr} 0x10.2 50; i2c mw ${play_eeprom_i2c_addr} 0x11.2 4c; i2c mw ${play_eeprom_i2c_addr} 0x12.2 41; i2c mw ${play_eeprom_i2c_addr} 0x13.2 59; i2c mw ${play_eeprom_i2c_addr} 0x14.2 2d; i2c mw ${play_eeprom_i2c_addr} 0x15.2 41; i2c mw ${play_eeprom_i2c_addr} 0x16.2 30; i2c mw ${play_eeprom_i2c_addr} 0x17.2 2d; i2c mw ${play_eeprom_i2c_addr} 0x18.2 00; i2c mw ${play_eeprom_i2c_addr} 0x19.2 00; i2c mw ${play_eeprom_i2c_addr} 0x1a.2 30; i2c mw ${play_eeprom_i2c_addr} 0x1b.2 32; i2c mw ${play_eeprom_i2c_addr} 0x1c.2 30; i2c mw ${play_eeprom_i2c_addr} 0x1d.2 30; i2c mw ${play_eeprom_i2c_addr} 0x1e.2 37; i2c mw ${play_eeprom_i2c_addr} 0x1f.2 38; i2c mw ${play_eeprom_i2c_addr} 0x20.2 30; i2c mw ${play_eeprom_i2c_addr} 0x21.2 31; i2c mw ${play_eeprom_i2c_addr} 0x22.2 30; i2c mw ${play_eeprom_i2c_addr} 0x23.2 32; i2c mw ${play_eeprom_i2c_addr} 0x24.2 30; i2c mw ${play_eeprom_i2c_addr} 0x25.2 30; i2c mw ${play_eeprom_i2c_addr} 0x26.2 30; i2c mw ${play_eeprom_i2c_addr} 0x27.2 31; i2c mw ${play_eeprom_i2c_addr} 0x28.2 36; i2c mw ${play_eeprom_i2c_addr} 0x29.2 34; i2c mw ${play_eeprom_i2c_addr} 0x2a.2 57; i2c mw ${play_eeprom_i2c_addr} 0x2b.2 57; i2c mw ${play_eeprom_i2c_addr} 0x2c.2 32; i2c mw ${play_eeprom_i2c_addr} 0x2d.2 33; i2c mw ${play_eeprom_i2c_addr} 0x2e.2 42; i2c mw ${play_eeprom_i2c_addr} 0x2f.2 42; i2c mw ${play_eeprom_i2c_addr} 0x30.2 42; i2c mw ${play_eeprom_i2c_addr} 0x31.2 42; i2c mw ${play_eeprom_i2c_addr} 0x32.2 42; i2c mw ${play_eeprom_i2c_addr} 0x33.2 42; i2c mw ${play_eeprom_i2c_addr} 0x34.2 53; i2c mw ${play_eeprom_i2c_addr} 0x35.2 53; i2c mw ${play_eeprom_i2c_addr} 0x36.2 53; i2c mw ${play_eeprom_i2c_addr} 0x37.2 53; i2c mw ${play_eeprom_i2c_addr} 0x38.2 11; i2c mw ${play_eeprom_i2c_addr} 0x39.2 02; i2c mw ${play_eeprom_i2c_addr} 0x3a.2 00; i2c mw ${play_eeprom_i2c_addr} 0x3b.2 60; i2c mw ${play_eeprom_i2c_addr} 0x3c.2 7d; i2c mw ${play_eeprom_i2c_addr} 0x3d.2 fe; i2c mw ${play_eeprom_i2c_addr} 0x3e.2 ff; i2c mw ${play_eeprom_i2c_addr} 0x3f.2 ff; gpio set ${play_eeprom_wp_gpio}; i2c md ${play_eeprom_i2c_addr} 0x00.2 40; 
+play_eeprom_wp_gpio=10;
+pxefile_addr_r=0x80100000
+ramdisk_addr_r=0x88080000
+rd_spec=-
+rdaddr=0x88080000
+run_fit=bootm ${addr_fit}#${fdtfile}${overlaystring}
+run_kern=booti ${loadaddr} ${rd_spec} ${fdtaddr}
+scan_dev_for_boot=echo Scanning ${devtype} ${devnum}:${distro_bootpart}...; for prefix in ${boot_prefixes}; do run scan_dev_for_extlinux; run scan_dev_for_scripts; done;run scan_dev_for_efi;
+scan_dev_for_boot_part=part list ${devtype} ${devnum} -bootable devplist; env exists devplist || setenv devplist 1; for distro_bootpart in ${devplist}; do if fstype ${devtype} ${devnum}:${distro_bootpart} bootfstype; then run scan_dev_for_boot; fi; done; setenv devplist
+scan_dev_for_efi=setenv efi_fdtfile ${fdtfile}; for prefix in ${efi_dtb_prefixes}; do if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}${efi_fdtfile}; then run load_efi_dtb; fi;done;run boot_efi_bootmgr;if test -e ${devtype} ${devnum}:${distro_bootpart} efi/boot/bootaa64.efi; then echo Found EFI removable media binary efi/boot/bootaa64.efi; run boot_efi_binary; echo EFI LOAD FAILED: continuing...; fi; setenv efi_fdtfile
+scan_dev_for_extlinux=if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}${boot_syslinux_conf}; then echo Found ${prefix}${boot_syslinux_conf}; run boot_extlinux; echo SCRIPT FAILED: continuing...; fi
+scan_dev_for_scripts=for script in ${boot_scripts}; do if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}${script}; then echo Found U-Boot script ${prefix}${script}; run boot_a_script; echo SCRIPT FAILED: continuing...; fi; done
+scriptaddr=0x80000000
+serverip=192.168.1.100
+soc=k3
+stderr=serial@2800000
+stdin=serial@2800000
+stdout=serial@2800000
+update_to_fit=setenv loadaddr ${addr_fit}; setenv bootfile ${name_fit}
+usb_boot=usb start; if usb dev ${devnum}; then devtype=usb; run scan_dev_for_boot_part; fi
+usbboot=setenv boot usb;setenv bootpart 0:2;usb start;run findfdt;run init_usb;run get_kern_usb;run get_fdt_usb;run run_kern
+vendor=ti
+
+Environment size: 15442/131068 bytes
+=> pri ipaddr
+ipaddr=192.168.1.55
+=> pri serverip
+serverip=192.168.1.100
+=>

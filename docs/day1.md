@@ -135,7 +135,22 @@ Bazı modülleri (_Kernel Modules_) dinamik olarak run-time da kernel içerisine
 - vmlinux, a raw uncompressed kernel image in the ELF format, useful for
 debugging purposes but generally not used for booting purposes
 
-15. Booting Kernel
+15. Booting Kernel / Compiling and Installing the Kernel
+
+`make -j 8` şeklinde linux top source directory altında kernel derlenebilir.Derlendikten sonra oluşan çıktılar
+
+- `arch/<arch>/boot/Image`, uncompressed kernel image that can be booted
+- `arch/<arch>/boot/*Image*`, compressed kernel images that can also be booted
+    - `bzImage` for x86, `zImage` for ARM, Image.gz for RISC-V, vmlinux.bin.gz for ARC, etc.
+- `arch/<arch>/boot/dts/<vendor>/*.dtb`, compiled Device Tree Blobs
+- All kernel modules, spread over the kernel source tree, as .ko (Kernel Object) files.
+- vmlinux, a raw uncompressed kernel image in the ELF format, useful for debugging purposes but generally not used for booting purposes
+
+Sonrasında Kernel ve Module'lar ayrı şekilde install edilir.
+
+Kernel installation için, native case'de `sudo make install` yapılırken embedded case için bu pek kullanılmaz. Genellikle tek bir dosyadan oluştuğundan daha basit olur ve build sistemi içerisinde script'ler yardımıylz yapılır.
+
+Module installation için, `sudo make modules_install` kullanılırken native case için, embedded case'de doğrudan kullanılamaz çünkü host'a kurmaya çalışır. Ancak elbette biz target board için bunu yapmak isteriz. `make INSTALL_MOD_PATH=<dir>/ modules_install`
 
 16. Hardware Description
 
@@ -165,3 +180,5 @@ Konsol parametresinidoğru bir şekilde sağladığımızda linux kernel mesajla
 - `dmesg` komutu ile o an available kernel log'larını görebiliriz. shell aracılığı ile diagnostic mesajları içerir (takılan bir usb cihazını görebiliriz örneğin)
 - log seviyelerine ayrılmıştır ve hangilerinin konsolda gözükeceğini ayarlayabiliriz. Example: `console=ttyS0 root=/dev/mmcblk0p2 loglevel=5`
 - düşük log seviyesine sahip seviye daha yüksek önceliğe sahiptir.
+
+
