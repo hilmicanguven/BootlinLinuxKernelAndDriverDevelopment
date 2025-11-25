@@ -1,0 +1,63 @@
+
+Device Tree Properties
+
+- **Compatible Property:** oluşturduğumuz node'ların hangi modüller ile uyumlu olduğunu (binding) belirtir. OS tarafından hangi sürücünün kullanılacağını karar vermek için kullanılır. real-hardware için oluştururken vendor ve model ismiyle oluşturulur. `compatible = "st,stm32mp1-dwmac", "snps,dwmac-4.20a";` örnek olarak verilebilir. Özel bir değeri vardır bu property'nin. `simple-bus` olarak tanımlanırsa memory mapped tüm node'lar iyi uyumludur.
+    - Tüm Linux sürücüleri `struct of_device_id[]` şeklinde tanımlanan string formatında desteklediği cihazları belirtir.
+
+@warning tüm sürücüler "platform_driver" olarak tanımlandır ve en basic struct `struct platform_driver` ile oluşturulur.Bu struct içinde `of_match_table` field'ına compatible olduğu sürücülerin `struct of_device_id xx` şeklinde oluşturulan struct pointer'ı verilir.
+
+
+```
+const struct of_device_id cs42l51_of_match[] = {
+    { .compatible = "cirrus,cs42l51", },
+    { }
+};
+MODULE_DEVICE_TABLE(of, cs42l51_of_match);
+```
+
+```
+static struct i2c_driver cs42l51_i2c_driver = {
+    .driver = {
+        .name = "cs42l51",
+        .of_match_table = cs42l51_of_match,
+        .pm = &cs42l51_pm_ops,
+    },
+    .probe = cs42l51_i2c_probe,
+    .remove = cs42l51_i2c_remove,
+    .id_table = cs42l51_i2c_id,
+};
+```
+
+
+- **Reg Property:** memory-mapped cihazlar için "base physical address" ve memory mapped register'ların "size" bilgisini veririz. node isminde yer alan `50027000` değeri ilk register'a ait adrestir. iki farklı base address varsa en düşük adres isimde yer alır. birden fazla entry'e sahip olabilir. i2c cihazlar için slave address değeri verilebilir. spi cihazlar için chip select değeri verilebilir.
+
+```
+sai4: sai@50027000 {
+    reg = <0x50027000 0x4>, <0x500273f0 0x10>;
+};
+
+&i2c1 {
+    hdmi-transmitter@39 {
+    reg = <0x39>;
+};
+cs42l51: cs42l51@4a {
+    reg = <0x4a>;
+};
+};
+```
+
+- **cells property:** Property numbers shall fit into 32-bit containers called `cells`. bu örnekte address ve size cell değeri 1 olduğu için `reg` ile tanımlanan addres ve size değeri 32bit'e sığmalıdır yani 1 cell'e. örneğin spi cihazı için bu değerler şöyle olmalıdır. spi cihazı için address değeri chip select'tir. bu da en fazla 8 veya 16 değerinde olabilir. 32-bit yeterli olduğundan `address-cells` 1 olur. `size-cells` ise 0 olur çünkü spi cihazı için size bilgisi vermeyiz.
+```
+module@a0000 {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    
+    serial@1000 {
+       reg = <0x1000 0x10>, <0x2000 0x10>;
+    };
+};
+```
+
+- **status property:** cihaz kullanılıyor mu (`okay` veya `ok`) yoksa kullanılmıyor mu (`disabled`)
+
+
