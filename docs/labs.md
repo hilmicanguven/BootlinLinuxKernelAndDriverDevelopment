@@ -86,3 +86,12 @@ Bytes transferred = 14 (e hex)
 820000e0: ffffffff ffffffff ffffffff ffffffff    ................
 820000f0: ffffffff ffffffff ffffffff fffdffff    ................
 ```
+
+
+
+LAB: Describing Hardware Devices
+
+mevcutta bulunan .dtb dosyasını(k3-am625-beagleplay.dts) kopyalayıp kendi dtb dosyamızı oluşturup aynı directory de bulunan Makefile a derenmesi için ekleriz. Sonrasında uboot da bootcmd args kısmından yeni dtb dosyasını seçerek kernel'i bu dtb ile ilklendiririz. mevcut dtb yi include edip çalıştırdığımızda tüm property'lerin inherit edildiği gözlemlenebilir. örneğin, ilklenme esnasında terminale bastırılan mesajlarda kartın adı/vendor vb bilgileri görürüz. buna benzer şekilde farklı property'ler de override edilebiliriz. bizim lab'da
+
+- bazı LED'lerin default-state ini override ederek default on yapacağız. ek olarak trigger da belirtilip belirli bir olay olduğunda sürülecek şekilde konfigüre edebiliriz.
+- nunchuk kullanmak için i2c kullanacağız. `i2cdetect` komutu ile kernel de i2c bus'ları gözlemleriz. I2C1 bus'ını konfigüre edeceğiz. bu komutu yazdığımızda bu bus'ı göremeyebiliriz. örneğin I2C0 ve I2C2 görebiliriz.
