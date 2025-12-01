@@ -60,4 +60,33 @@ module@a0000 {
 
 - **status property:** cihaz kullanılıyor mu (`okay` veya `ok`) yoksa kullanılmıyor mu (`disabled`)
 
+resources: interrupts, clocks, DMA, reset lines
+
+@todo add example code from the slides
+
+bu kaynakları kullanacak modüller örnekte olduğu gibi kendi içerisinde property olarak tanımlar. interrupt için ne vermesi gerekli olduğu "intc" de belirtiler. interrupt-cells = <3> olduğundan spi bunu kullanmak için 3 tane cell'i tanımlamak zorundadır.
+
+Generic Suffixes
+
+- bir driver gpio'ya kullanmak istediğinde `xxx-gpios` şeklinde bir isimlendirme kullanır.
+
+----------------------
+
+Binding Syntax
+
+xxx
+
+
+-----------------------
+
+- Introduction to Pin Muxing
+
+genellikle soc üzerinde limitli sayıda pin bulunduğu için ne için kullanacağımızı iyi seçmek gerekir. ancak tüm özellikler aynı anda kullanılmayabilir. bu nedenle pin'lerin nereye bağlı olduğunu farklı zamanlarda farklı seçebilmek işimize gelir. `drivers/pinctrl` subsystem i bunu yapmak için kullanılır. hem kernel hem de consumer (device driver) tarafı bulunur. kernel içerisinde tüm pin tanımları ve pin operasyon fonksiyonları vb belirleriz. This subsystem, located in drivers/pinctrl/ provides a generic subsystem to handle pin muxing. It offers:
+- A pin muxing driver interface, to implement the system-on-chip specific drivers that configure the muxing.
+- A pin muxing consumer interface, for device drivers
+    - bunlar subsystem den istedikleri pin konfiglerini device tree aracılığı ile belirtir.
+    - SoC level (*.dtsi) ve Board Level (*.dts) olmak üzere iki şekile kullanılabilir
+
+Lab içerisinde nasıl konfigüre ettiğimize bakacağız.
+
 

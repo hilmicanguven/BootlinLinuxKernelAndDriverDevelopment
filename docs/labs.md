@@ -91,7 +91,43 @@ Bytes transferred = 14 (e hex)
 
 LAB: Describing Hardware Devices
 
-mevcutta bulunan .dtb dosyasını(k3-am625-beagleplay.dts) kopyalayıp kendi dtb dosyamızı oluşturup aynı directory de bulunan Makefile a derenmesi için ekleriz. Sonrasında uboot da bootcmd args kısmından yeni dtb dosyasını seçerek kernel'i bu dtb ile ilklendiririz. mevcut dtb yi include edip çalıştırdığımızda tüm property'lerin inherit edildiği gözlemlenebilir. örneğin, ilklenme esnasında terminale bastırılan mesajlarda kartın adı/vendor vb bilgileri görürüz. buna benzer şekilde farklı property'ler de override edilebiliriz. bizim lab'da
+mevcutta bulunan .dtb dosyasını(k3-am625-beagleplay.dts) kopyalayıp kendi dtb dosyamızı oluşturup aynı directory de bulunan Makefile a derenmesi için ekleriz. Sonrasında uboot da bootcmd args kısmından yeni dtb dosyasını seçerek kernel'i bu dtb ile ilklendiririz. mevcut dtb yi include edip çalıştırdığımızda tüm property'lerin inherit edildiği gözlemlenebilir. örneğin, ilklenme esnasında terminale bastırılan mesajlarda kartın adı/vendor vb bilgileri görürüz. buna benzer şekilde farklı property'ler de override edilebiliriz. kernel ilklendikten sonra `cat /sys/firmware/devicetree/base` path'i içerisinde devicetree ye ait bilgilere de erişebiliriz. ./model içerisinde modelimize dts dosyası içerisinde verdiğimiz model adı ne ise onu görürüz.
 
-- bazı LED'lerin default-state ini override ederek default on yapacağız. ek olarak trigger da belirtilip belirli bir olay olduğunda sürülecek şekilde konfigüre edebiliriz.
-- nunchuk kullanmak için i2c kullanacağız. `i2cdetect` komutu ile kernel de i2c bus'ları gözlemleriz. I2C1 bus'ını konfigüre edeceğiz. bu komutu yazdığımızda bu bus'ı göremeyebiliriz. örneğin I2C0 ve I2C2 görebiliriz.
+- bazı LED'lerin default-state ini override ederek default on yapacağız. ek olarak trigger da belirtilip belirli bir olay olduğunda sürülecek şekilde konfigüre edebiliriz. default halinde de her led için tanımlı bir trigger action'ı olur. örneğin "heartbeat" ile on olan bir led.
+- nunchuk kullanmak için i2c kullanacağız. `i2cdetect` komutu ile kernel de i2c bus'ları gözlemleriz. I2C1 bus'ını konfigüre edeceğiz. bu komutu yazdığımızda bu bus'ı göremeyebiliriz. örneğin I2C0 ve I2C2 görebiliriz. lab örneğinde halihazırda bu iki bus active. biz ise I2C1 kullanıp işleri biraz daha zorlaştıracağız. linux kernel'deki I2C bus sırası ile datasheet uyumlu olmayabilir çünkü kernel probe sırasına göre device'ları oluşturur. sırasını belirlemek için `ls -l /sys/bus/i2c/devices/i2c-*` komutu çağırılarak peripheral base adreslerine bakılarak karar verebiliriz hangi sıra probe olan datasheet e göre hangi bus'a tekabül ediyor.
+    - I2C1 i enable etmek için öncelikle devicetree içerisinde buluruz. elbette bunun bulunduğu yerde değilde kendi custom device tree'mizde referans node vererek status=okay olarak değiştiririz.
+    - nunchuck için yazacağımız sürücüyü i2c bus'ında bir cihaz olacağı için device tree dosyası içerisinde child node olarak ekleriz.
+
+
+LAB: Configuring Pin Muxing
+
+olduğu hali ile nunchuk'ı denemeye kalkıtığımızda cihazı bulamadığını görebiliriz (`i2cdetect -r 1` ile probe olmayı deneyebiliriz) bunun nedeni scl ve sda pinlerinin sürekli low'da kaldığı için timeout oluşmasıdır çünkü bu hatların external pull up resistorlar ile bağlanması gerekir. sanıyorum controlcünün bunu yapmaması farklı pinmux seçenekleri olduğu içindir. i2c1 bus'ı için reference manuel e (bazen datasheet de de yer alabilir. beaglebone black için datasheet de yer alır) bakıp sda ve scl pinlerinin nereye bağlı olduğuna, alternatif fonksiyonlara vb bakmak gerekir. bu pinlerin pull-up ya da pull-down, receiver enable-disable, fast-slow slew rate gibi konfigürasyonlarını içeren register'ları buluyor olacağız. bu pinmux işlemini sağlayacak şekilde dts içerisinde tanımlamalarını yapmamız gerekir.
+
+```
+mikrobus_i2c_pins_default: mikrobus-i2c-default-pins {
+pinctrl-single,pins = <
+    AM62X_IOPAD(0x01d0, PIN_INPUT_PULLUP, 2) /* (A15) UART0_CTSn.I2C3_SCL */
+    AM62X_IOPAD(0x01d4, PIN_INPUT_PULLUP, 2) /* (B15) UART0_RTSn.I2C3_SDA */
+    >;
+};
+```
+sonrasında bu pinctrl bloğu kendi dts dosyamız içerisinde referansını vererek i2c modülü içerisinde tanımlamamız gerekir.
+
+```
+...
+
+
+&i2c1 {
+    status = "okay";
+    clock-frequency = <100000>;
+    pinctrl-0 = <&mikrobus-i2c-default-pins>;
+    pinctrl-names = "default";
+
+    joystick@52 {
+        compatible = "nintendo, nunchuk";
+        reg  = <0x52>;
+    };
+
+};
+```
+
