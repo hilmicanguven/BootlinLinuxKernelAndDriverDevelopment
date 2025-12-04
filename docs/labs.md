@@ -138,3 +138,13 @@ nunchuk cihaza ait bazı detayları datasheet'inden bulabiliriz. örneğin slave
 "binding" adı verilen bir çeşit spec ile sürücü ve donanım arasında bir çeşit handshake sağlanabilir ve doğru donanım gereklilikleri ile sürücü arasında bir anlaşma sağlanır. istenirse kendi donanımınız için bu dosyayı oluşturabilir ve device tree içinde nasıl bir tanımlama yapacağınızı belirlemiş olursunuz. genellikle .yaml dosyası olarak görürüz. ve bu dosya içerisinde de propert'yleri belirleyebiliriz. hangilerinin required olup olmadığını belirleyebiliriz. hatta bir example bile ekleyebiliriz.
 
 doğru şekilde dtb ekleyebildiğimizi test etmek için `find /sys/firmware/devicetree -name "*joystick*"` komutu ile linux kernel'de device'ı görmeyi bekleriz.
+
+
+LAB: Nunchuk Cihazı için Driver Yazmak
+
+sürücünün init fonksiyonunu yazdıktan sonra kernel'de cihazımızı bulabiliyor olacağız. bunun için kullanacağımız temel komutları inceleyebiliriz.
+
+- `/sys` : /sys/class içerisinde cihazlar sınıflandırılır. `/sys/class/net` içerisinde network interface'leri görebiliriz. `ipconfig a` ile netif'leri görebiliriz.
+- `/dev` : serial device'lar ttyS*, gpio cihazlar, i2c cihazlar vb burada file olarak kayıt edildiğini görürüz. `echo "something sdsfsdf" > ttyS0` komutu ile aslında ttyS0 cihazına ki bizim örneğimizde aslında terminalimiz oluyor bu mesaj gönderilir ve mesajı terminalde görüyor oluruz.
+
+`nunchuk.c` içerisine yazdığımız sürücümüzü derleyip insmod ile load ettiğimizde probe fonksiyonunun çalıştığını görebiliriz terminale bastırdığımız debug print'leri ile.

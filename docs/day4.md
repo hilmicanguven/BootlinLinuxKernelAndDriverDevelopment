@@ -149,3 +149,37 @@ static struct i2c_driver adxl345_i2c_driver = {
 
 module_i2c_driver(adxl345_i2c_driver)
 ```
+
+! @note probe fonksiyonu için cihazın kendisini gösteren `struct i2c_client` ı gösteren pointer'ı parametre olarak alır. burada sensor (imu) için bir örnek kod mevcut. bunu probe yapmak istediğimizde `struct iio_dev` framework'ünü kullandığını görürüz. iio = industrial io anlamına gelir ve kernel'in sağladığı bir feature'dur. sensörü tanımlamak için kullanılır. bazı sensörler (imu, temp sensor, gyro, adcs etc)
+
+
+```
+static int da311_probe(struct i2c_client *client,
+const struct i2c_device_id *id)
+{
+    struct iio_dev *indio_dev; // framework structure
+    da311_data *data; // per device structure
+    ...
+    // Allocate framework structure with per device struct inside
+    indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*data));
+    data = iio_priv(indio_dev);
+    data->client = client;
+    i2c_set_clientdata(client, indio_dev);
+    // Prepare device and initialize indio_dev
+    ...
+    // Register device to framework
+    ret = iio_device_register(indio_dev);
+    ...
+    return ret;
+}
+```
+
+- communication with I2C Device: raw API
+    - en temelde iki fonksiyona sahip oluruz cihaz ile konuşmak için -> send() ve receive()
+        - int i2c_master_send(const struct i2c_client *client, const char *buf, int count); //Sends the contents of buf to the client.
+        - int i2c_master_recv(const struct i2c_client *client, char *buf, int count); //Receives count bytes from the client, and store them into buf
+    - i2c cihazından bir data okumak için aslında önce hangi adresten okumak istediğimizi göndeririz. sonra okuruz. yani önce send sonra receive yaparız. bu nedenle `transfer()` adında bu transaction'ı yapacak bir fonksiyon bulunur genelde.
+
+- SMBus Calls
+    - i2c nin bir subset'idir ve bazı standard set-of-transaction tanımlamaları yapar
+    - Linux smbus'ı destekleyen arayüzleri sağlar. `i2c_smbus_read_byte_data()` örnektir. bunu çağırdığımızda bizim yerimizi gerekli transaction'ı başlatır. gerisini düşünmemize gerek kalmaz.
