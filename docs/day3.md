@@ -81,12 +81,18 @@ xxx
 
 - Introduction to Pin Muxing
 
-genellikle soc üzerinde limitli sayıda pin bulunduğu için ne için kullanacağımızı iyi seçmek gerekir. ancak tüm özellikler aynı anda kullanılmayabilir. bu nedenle pin'lerin nereye bağlı olduğunu farklı zamanlarda farklı seçebilmek işimize gelir. `drivers/pinctrl` subsystem i bunu yapmak için kullanılır. hem kernel hem de consumer (device driver) tarafı bulunur. kernel içerisinde tüm pin tanımları ve pin operasyon fonksiyonları vb belirleriz. This subsystem, located in drivers/pinctrl/ provides a generic subsystem to handle pin muxing. It offers:
+genellikle soc üzerinde limitli sayıda pin bulunduğu için ne için kullanacağımızı iyi seçmek gerekir. ancak tüm özellikler aynı anda kullanılmayabilir. bu nedenle pin'lerin nereye bağlı olduğunu farklı zamanlarda farklı seçebilmek işimize gelir. 2 tane pini pinmux ile konfigüre ettiğimizi düşünelim. genellikle şunu yapmak isteriz birisi uart_rx diğeri uart_tx ya da birisi i2c_sda diğeri i2c_scl. bunları bir grup olarak düşünürüz. "pin group" adını veririz. gidip de birini uart_tx diğeri i2c_sda yapmak pek mantıklı olmayacaktır. bu pin group için yine device tree dosyasında property'ler bulunur.
+
+`drivers/pinctrl` subsystem i bunu yapmak için kullanılır. bu sürücüyü genelde bizim güncellememiz gerekmez. soc'yi üreten kim ise kernel'e destek verdiğinde bupinmux işlemini de sağlıyor olmasını bekleriz. 
+
+bu subsystem'in hem kernel hem de consumer (device driver) tarafı bulunur. consumer tarafı için şunu söyelemek isteriz ->  benim şu şu pinleri kullanmaya ihtiyacım var.device tree içinde de hangi pinler olduğunu söyleriz. asıl kullanacağımız kısım burası olur aslında. kernel içerisinde tüm pin tanımları ve pin operasyon fonksiyonları vb belirleriz. This subsystem, located in drivers/pinctrl/ provides a generic subsystem to handle pin muxing. It offers:
 - A pin muxing driver interface, to implement the system-on-chip specific drivers that configure the muxing.
 - A pin muxing consumer interface, for device drivers
     - bunlar subsystem den istedikleri pin konfiglerini device tree aracılığı ile belirtir.
     - SoC level (*.dtsi) ve Board Level (*.dts) olmak üzere iki şekile kullanılabilir
 
+
 Lab içerisinde nasıl konfigüre ettiğimize bakacağız.
+
 
 
