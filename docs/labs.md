@@ -147,4 +147,4 @@ sürücünün init fonksiyonunu yazdıktan sonra kernel'de cihazımızı bulabil
 - `/sys` : /sys/class içerisinde cihazlar sınıflandırılır. `/sys/class/net` içerisinde network interface'leri görebiliriz. `ipconfig a` ile netif'leri görebiliriz.
 - `/dev` : serial device'lar ttyS*, gpio cihazlar, i2c cihazlar vb burada file olarak kayıt edildiğini görürüz. `echo "something sdsfsdf" > ttyS0` komutu ile aslında ttyS0 cihazına ki bizim örneğimizde aslında terminalimiz oluyor bu mesaj gönderilir ve mesajı terminalde görüyor oluruz.
 
-`nunchuk.c` içerisine yazdığımız sürücümüzü derleyip insmod ile load ettiğimizde probe fonksiyonunun çalıştığını görebiliriz terminale bastırdığımız debug print'leri ile.
+`nunchuk.c` içerisine yazdığımız sürücümüzü derleyip insmod ile load ettiğimizde probe fonksiyonunun çalıştığını görebiliriz terminale bastırdığımız debug print'leri ile. `ls /sys/bus/i2c/devices` yazdığımızda I2C1 üzerinde adresi 0x52 olan cihazımızı görmeliyiz.
