@@ -183,3 +183,16 @@ const struct i2c_device_id *id)
 - SMBus Calls
     - i2c nin bir subset'idir ve bazı standard set-of-transaction tanımlamaları yapar
     - Linux smbus'ı destekleyen arayüzleri sağlar. `i2c_smbus_read_byte_data()` örnektir. bunu çağırdığımızda bizim yerimizi gerekli transaction'ı başlatır. gerisini düşünmemize gerek kalmaz.
+
+
+# Kernel Frameworks for Device Drivers
+
+## Types of devices
+
+Genellikle üç çeşit device tipi bulunuyor.
+
+- Network Devices: network interfaces (Wifi, bluetooth, CAN(?) vb) olarak karşımıza çıkar. `ip a` ile bu cihazları listeyip görebiliriz.
+- Block Devices: storage cihazlar için kullanılır. `/dev` altında gözükürler. 
+- Character Devices: diğer ikisi dışında kalan tipler içindir (graphics, serial,sound vb). /dev altında listelenir. en çok da bu tip device'lar karşımıza çıkar.
+
+Major ve Minor olarak tüm sürücülere identifier numaralar veririz. major sayısı genellikle family'si hakkında bilgi verir. `ls -al /dev` ile device'lar ve major/minor numaraları görülebilir.
