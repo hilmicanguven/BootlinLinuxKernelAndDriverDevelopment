@@ -196,3 +196,21 @@ Genellikle üç çeşit device tipi bulunuyor.
 - Character Devices: diğer ikisi dışında kalan tipler içindir (graphics, serial,sound vb). /dev altında listelenir. en çok da bu tip device'lar karşımıza çıkar.
 
 Major ve Minor olarak tüm sürücülere identifier numaralar veririz. major sayısı genellikle family'si hakkında bilgi verir. `ls -al /dev` ile device'lar ve major/minor numaraları görülebilir.
+
+
+
+## Exchanging Data with User Space 
+
+Kernel kodu içerisinde user space'den gelen hiçbir adrese güvenmemek gerekir. `memcpy()` ya da direct pointer referencing yapılmasına izin verilmemlidir.
+kernel kodunu portable yapabilmek adına özel arayüzler kullanarak user'a map'lenmiş adreslerin asıl değerini alıp kernel içerisinde kullanırız.
+Bu iki space arasında veri kopyalarız.
+Bu arayüzler;
+    - `get_user`
+    - `put_user(v, p)`
+    - `copy_to_user`
+    - `unsigned long copy_from_user(void *to, const void __user *from, unsigned long n);`
+
+her kernel-user adres dönüşümünde data kopyalamak çok maliyetli hale gelebilir. bunun için Zero-Copy adı verilen yöntem ile farklı arayüzler kullanarak bu kopyalamadan kaçmaya çalışırız.
+    - `mmap()` : syscall çağrısı yapıldığında doğrudan kernel adresine MMIO (Memory Mapped IO) erişebilir.
+    - `get_user_pages()` : user adresi ile kernel arası arasındaki map hakkında bilgi sahibi oluruz ve kopyalamaya gerek kalmadan çalışabiliriz.
+
