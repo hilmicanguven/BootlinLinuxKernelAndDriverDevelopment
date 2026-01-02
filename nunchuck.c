@@ -17,6 +17,11 @@ this header is generic and contains architecture specific implementation.
 #include <linux/delay.h>
 
 
+/* Per device structure */
+struct nunchuk_dev {
+	struct i2c_client *i2c_client;
+};
+
 
 static int nunchuk_read_registers(struct i2c_client* client)
 {
@@ -56,9 +61,18 @@ static int nunchuk_read_registers(struct i2c_client* client)
 */
 static int nunchuk_probe(struct i2c_client * client)
 {
+    struct nunchuk_dev *nunchuk;
+	struct input_dev *input;
     const int msg_size = 2;
     char buff[msg_size];
     int ret;
+
+	/* Allocate per device structure */
+	nunchuk = devm_kzalloc(&client->dev, sizeof(*nunchuk), GFP_KERNEL);
+	
+    if (!nunchuk)
+		/* No message necessary here, already issued by allocation functions */
+		return -ENOMEM;
 
     pr_info("Function: %s - Line: %d \n", __func__, __LINE__);
     
@@ -83,6 +97,11 @@ static int nunchuk_probe(struct i2c_client * client)
     {
         return -EINVAL;
     }
+
+    	/* Allocate input device */
+	input = devm_input_allocate_device(&client->dev);
+	if (!input)
+		return -ENOMEM;
     
     /**
     datasheet/instructions says two read operation is required */
