@@ -197,6 +197,33 @@ Genellikle üç çeşit device tipi bulunuyor.
 
 Major ve Minor olarak tüm sürücülere identifier numaralar veririz. major sayısı genellikle family'si hakkında bilgi verir. `ls -al /dev` ile device'lar ve major/minor numaraları görülebilir.
 
+## Devices: Everything is a File
+
+UNIX-like sistemlerde çok önemli bir karar alınmış ve tüm sistem nesnelerini dosya (file) olarak tanımlayabiliriz. `open/read/write/close/devctl` gibi arayüzleri destekler ve bu şekilde erişebiliriz. daha doğrusu application'lar cihazlara bu şekilde erişir. buna yapacak mekanizmaya "device file" denebilir. `/dev` altında tüm bu dosyalar depolanır.
+
+## Character Drivers
+
+bu dosyalar aslında bir dosyadan farklı değildir  uygulama gözünden bakarsak. common interface'leri desteklemelidir.
+- `struct file_operations` struct'ı içinde bunch of function pointers bulunur ve bunların implementation ı yapılmalıdır bir device'ı register ederken.
+
+Here are the most important operations for a character driver, from the definition of
+struct file_operations:
+````
+struct file_operations {
+    struct module *owner;
+    ssize_t (*read) (struct file *, char __user *, size_t, loff_t *);
+    ssize_t (*write) (struct file *, const char __user *, size_t, loff_t *);
+    long (*unlocked_ioctl) (struct file *, unsigned int, unsigned long);
+    int (*mmap) (struct file *, struct vm_area_struct *);
+    int (*open) (struct inode *, struct file *);
+    int (*release) (struct inode *, struct file *);
+...
+};
+````
+Many more operations exist. All of them are optional.
+
+
+
 
 
 ## Exchanging Data with User Space 
