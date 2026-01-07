@@ -148,3 +148,54 @@ sürücünün init fonksiyonunu yazdıktan sonra kernel'de cihazımızı bulabil
 - `/dev` : serial device'lar ttyS*, gpio cihazlar, i2c cihazlar vb burada file olarak kayıt edildiğini görürüz. `echo "something sdsfsdf" > ttyS0` komutu ile aslında ttyS0 cihazına ki bizim örneğimizde aslında terminalimiz oluyor bu mesaj gönderilir ve mesajı terminalde görüyor oluruz.
 
 `nunchuk.c` içerisine yazdığımız sürücümüzü derleyip insmod ile load ettiğimizde probe fonksiyonunun çalıştığını görebiliriz terminale bastırdığımız debug print'leri ile. `ls /sys/bus/i2c/devices` yazdığımızda I2C1 üzerinde adresi 0x52 olan cihazımızı görmeliyiz.
+
+
+# Practical lab - I/O memory and ports
+
+- Add UART devices to the board device tree
+- Access I/O registers to control the device and send first characters to it.
+
+Objective: read / write data from / to a hardware device
+
+Device Tree dosyaları içerisine eklemeler yaparak bir driver tarafından iki tane UART peripheral'ı (UART5 ve UART6) kullanacak şekilde bir örnek yapacağız.  
+
+bu iki peripheral **Mikrobus Connector** a route edilmiş halde geliştirilmiştir.
+
+- Mikrobus Connector: MikroBUS connector, MikroElektronika tarafından tanımlanmış açık bir standarttır. Sensörler, haberleşme modülleri, motor sürücüler, ekranlar gibi çok sayıda “Click Board” eklentiyi kolayca takıp kullanmaya yarar. BeaglePlay üzerinde bulunan mikroBUS portları, UART, I²C, SPI, PWM, ADC ve GPIO hatlarını SoC’den dışarıya yönlendirir.
+
+UART5 doğrudan mikrobus üzerindeki TX ve RX'e bağlanmış ancak UART6 default olarak SPI2'ye bağlandığı için burada değişiklik yapılması gereklidir.Pinmuxing ile doğru seçimi yapmamız gerekir. AM625 datasheet'de bunu bulabiliriz.
+
+```
+&main_pmx0 {
+    /* Pins COPI (TX) and CIPO (RX) of the mikrobus connector */
+    main_uart6_pins: main_uart6_pins {
+        pinctrl-single,pins = <
+            AM62X_IOPAD(0x0198, PIN_INPUT_PULLUP, 3) /* (A19) MCASP0_AXR2.UART6_TXD */
+            AM62X_IOPAD(0x0194, PIN_INPUT_PULLUP, 3) /* (B19) MCASP0_AXR3.UART6_RXD */
+        >;
+    };
+};
+
+&main_spi2 {
+    status = "disabled";
+};
+
+```
+
+Pinmux sonrası UART cihazlarımızın tanımlamasını yapabiliriz
+
+```
+&main_uart5 {
+    compatible = "bootlin,serial";
+};
+
+&main_uart6 {
+    compatible = "bootlin,serial";
+    pinctrl-names = "default";
+    pinctrl-0 = <&main_uart6_pins>;
+};
+```
+
+**IMPORTANT:** This is a good example of how we can override definitions in the Device Tree. uart5 and uart6 are already enabled and muxed in **arch/arm64/boot/dts/ti/k3-am625-beagleplay.dts**. In the above code, we just override the compatible property to use our driver instead of using the default one.
+
+

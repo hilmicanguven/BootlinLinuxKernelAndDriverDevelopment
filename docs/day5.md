@@ -91,3 +91,68 @@ The events are sent by the driver to the event handler using `input_event(struct
 user space'den interaksiyon için "event interface" kullanılır. her input cihazı `/dev/input/event<X>` karakter device olarak kayıt edlir. Her okuma istedi `struct input_event` şeklinde bir structure döndürür.
 
 Kolay test işlemi için **evtest** event test komutunu terminalden kullanarak cihaz adı ile sorgulayabiliriz.
+
+
+# Memory Management
+
+## Physical and Virtual Memory
+
+Process'lerin kullandığı adreslere virtual adres deriz ve bunların karşılık geldiği fiziksel adreslere map'leriz. fiziksel adresler I/O cihazlara ya da peripheral'lari ait olabilir. Ancak user process'ler bu adreslere doğrudan erişemezler.
+
+Kernel dışında kalan adresleri virtual olarak işaretleriz. Her process kendi adres space'ini (program, stack vb) görür. Başka process'lerin adreslerini göremez. Eğitim içeriğinde örneği açıklayarak ilerleyelim. 4gb memory'miz old durumda 1gb kernel kalan 3gb process'lere bölünmüş olduğunu varsayalım.
+
+Kernel'in bir kısmı (low memory) 1:1 ono-to-one contiguously map edilir. bunun dışında bazı bölgeler I/O memory veya farklı mapping işlemi yapılabilir. 32bit sistemlerde bazı limitler mevcut. daha fazla RAM'e sahip olduğumuzda Kernel doğrudan erişemezken user-space erişebiliyor olur gibi. 64-bit sistemlerde hayat çok daha güzeldir.
+
+User space'de map yapılırken gerçekte var olandan daha büyük bir fiziksel alana izin verilebilir. bu elbette out-of-memory durumlarına sebep olabilir. bir çeşit ilüzyon sağlar diyebiliriz. 1gb'lık bir adresi map'leyebiliriz user space'de. Ancak bunun yalnızca 10 byte'ını kullanabiliriz. bu gibi durumlarda çok büyük bir memory allocate edilse de kullanılmadığı için sorun oluşturmaz. yani tüm process'ler aynı anda fiziksel RAM'i kullanmayabilir. ayrıca, Bellek yönetim birimi (MMU) sayesinde sayfalar RAM’e yüklenir. Kullanılmayan sayfalar disk üzerinde (swap alanında) tutulur. Böylece fiziksel RAM’den daha büyük bir sanal adres alanı kullanılabilir. `/proc/sys/vm/overcommit*` kullanımı ile bu engellenebilir.
+
+- Page Allocators: Memory Allocation için genellikle memory page'lere bölünmüştür. genellikle 4Kb olur. Maksimum 8192 Kb olur ancak kernel konfigürasyonuna göre değişir. çeşitli page allocator api'leri mevcuttur.
+    - get free pages: `get_zeroed_page`, `__get_free_page`
+    - page'leri free etmek/bırakmak için: `free_page`, `free_pages`
+    - kullanılan flag'ler (common ones):
+        - `GFP_KERNEL`: standard kernel memory allocation. blok'lanabilir. interrupt handler context'i dışında ihtiyacımızı görür. uygun memory bulana kadar bekleyebilir.
+        - `GFP_ATOMIC`: interrupt context içerisinde kullanılmak içindir. Blok'lanmaz. fail olabilir ancak direkt return eder.
+
+
+- SLAB Allocators
+    The SLAB allocator allows to create caches, which contain a set of objects of the same size. In English, slab means tile (döşemek, yan yana koymak, fayans :) ). Yani **eş boyutlarda allocate edilmiş bir buffer pool'u diyebiliriz.** genelde bir sürücü içinde pek kullanılmaz. onun yerine, birden fazla instance olan data structure içeren durumlarda kullanılır.
+
+- kmalloc allocator
+    
+    linux kernel'i içerisinde genel amaçlı kullanılan allocator'dır. user space'deki malloc'un equivalent'i diyebiliriz. daha küçük boyutlar için SLAB allocator kullanır. 
+    ```
+    #include <linux/slab.h>
+    
+    // Allocate size bytes, and return a pointer to the area (virtual address)
+    // size: number of bytes to allocate
+    // flags: same flags as the page allocator
+
+    void *kmalloc(size_t size, gfp_t flags);
+    void kfree(const void *objp);
+    void *kzalloc(size_t size, gfp_t flags);
+    void *kcalloc(size_t n, size_t size, gfp_t flags);
+    void *krealloc(const void *p, size_t new_size, gfp_t flags);
+    ```
+
+    dev_* ile başlayan aynı kernel alloc fonksiyonlarıbulunur. bunların kullandığı memory otomatik olarak free edilir unprobed olduğu zaman.
+
+
+- vmalloc alloacator
+
+    virtual address space içerisinde contiguous bellek allocate eder ancak physical olarak böyle olmak zorunda değildir. **DMA kullanımı için uygun değildir** genellikle çok büyük alan allocate edildiğinde gözükebilir.
+    `void *vmalloc(unsigned long size);` ve `void vfree(void *addr)` kullanılabilir.
+
+## I/O Memory
+
+**Memory-Mapped I/O:** Register'lara erişim yapma şeklimiz normal bir adrese erişmek ile aynıdır. MMIO’da bellek ve I/O cihazları aynı adres alanını paylaşır. Yani belirli adres aralıkları RAM yerine cihaz register’larına karşılık gelir. Aynı instruction'lar ile (store/load) erişebiliriz. özel farklı instruction'lara gerek kalmaz. Kernel'e hangi memory bölgesinde I/O register'ları olduğunu söylemek gereklidir. `struct resource *request_mem_region(unsigned long start, unsigned long len, char *name);` ile bunu yapabiliriz. **Driver tarafından bu Memory Mapped I/O adresini erişmek için virtual adres için ek bir map işlemi gereklidir.** `ioremap` bunun için kullanılır. `void __iomem *ioremap(phys_addr_t phys_addr, unsigned long size);`
+
+- Managed API: yukarıda bahsedilen ap'ler deprecated olacaklardır.bunun yerie device managed api'ler öncekilere benzer şekilde bulunur.
+    - `devm_ioremap()`
+    - `devm_ioremap_resource()` : hem request hem de remap işlemini yapar
+    - `devm_platform_ioremap_resource()` : gereken tüm işlemleri tek api ile yapar.
+
+
+`ioremap()`in döndürdüğü adresleri doğrudan read/write yapmak bazı mimarilerde çalışmayabilir. bunlar için bazı accessor fonksiyonlar oluşturulmuştur.
+    - read[b/w/l/q] and write[b/w/l/q] for access to **little-endian** devices, includes memory barriers
+    - ioread[8/16/32/64]be and iowrite[8/16/32/64]be for access to **big-endian** devices, includes memory barriers
+    - __raw_read[b/w/l/q] and __raw_write[b/w/l/q] for raw access: no endianness conversion, no memory barriers
+

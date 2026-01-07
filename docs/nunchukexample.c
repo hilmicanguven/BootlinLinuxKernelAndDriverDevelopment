@@ -40,6 +40,8 @@ static int nunchuk_read_registers(struct i2c_client *client, u8 *recv)
 	return 0;
 }
 
+/** @brief Read the state of the buttons and reports them
+ */
 static void nunchuk_poll(struct input_dev *input)
 {
 	u8 recv[6];
@@ -102,7 +104,7 @@ static int nunchuk_probe(struct i2c_client *client)
 		return ret;
 	}
 
-	/* Allocate input device */
+	/* Allocate input device, resources will be freed automatically */
 	input = devm_input_allocate_device(&client->dev);
 	if (!input)
 		return -ENOMEM;

@@ -1,0 +1,406 @@
+// SPDX-License-Identifier: GPL-2.0
+#include "linux/printk.h"
+#include <linux/completion.h>
+#include <linux/dma-mapping.h>
+#include <linux/atomic.h>
+#include <linux/dmaengine.h>
+#include <linux/spinlock.h>
+#include <linux/spinlock_types.h>
+#include <linux/wait.h>
+#include <linux/interrupt.h>
+#include <linux/pm_runtime.h>
+#include <linux/init.h>
+#include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
+#include <linux/serial_reg.h>
+#include <linux/io.h>
+#include <linux/clk.h>
+
+
+// #define SERIAL_RESET_COUNTER 0
+// #define SERIAL_GET_COUNTER 1
+
+// #define OMAP_UART_SCR_DMAMODE_CTL3 0x7
+// #define OMAP_UART_SCR_TX_TRIG_GRANU1 BIT(6)
+
+// #define SERIAL_BUFSIZE 16
+
+/** @brief Serial device structure that describes peripherals */
+struct serial_dev {
+	/** @brief memory mapped i/o registers base address */
+	void __iomem *regs;
+	struct miscdevice miscdev;
+	atomic_t counter;
+	char rx_buf[SERIAL_BUFSIZE];
+	char tx_buf[SERIAL_BUFSIZE];
+	unsigned int buf_rd;
+	unsigned int buf_wr;
+	wait_queue_head_t wait;
+	spinlock_t lock;
+	struct resource *res;
+	struct device *dev;
+	struct dma_chan *txchan;
+	dma_addr_t fifo_dma_addr;
+	bool txongoing;
+	struct completion txcomp;
+};
+
+// static u32 reg_read(struct serial_dev *serial, unsigned int reg)
+// {
+// 	return readl(serial->regs + (reg * 4));
+// }
+
+// static void reg_write(struct serial_dev *serial, u32 val, unsigned int reg)
+// {
+// 	writel(val, serial->regs + (reg * 4));
+// }
+
+// static void serial_write_one_char(struct serial_dev *serial, char c) 
+// {
+// 	unsigned long flags;
+
+// 	spin_lock_irqsave(&serial->lock, flags);
+
+// 	while (!(reg_read(serial, UART_LSR) & UART_LSR_THRE))
+// 		cpu_relax();
+
+// 	reg_write(serial, c, UART_TX);
+	
+// 	spin_unlock_irqrestore(&serial->lock, flags);
+
+// 	atomic_inc(&serial->counter);
+// }
+
+// static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_t *offs)
+// {
+// 	struct miscdevice *miscdev_ptr = file->private_data;
+// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+
+// 	unsigned long flags;
+// 	char c;
+
+// 	wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
+
+// 	spin_lock_irqsave(&serial->lock, flags);
+
+// 	c = serial->rx_buf[serial->buf_rd++];
+// 	if (SERIAL_BUFSIZE == serial->buf_rd)
+// 		serial->buf_rd = 0;
+
+// 	spin_unlock_irqrestore(&serial->lock, flags);
+
+// 	put_user(c, buf);
+
+// 	return 1;
+// }
+
+// static ssize_t serial_write_pio(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
+// {
+// 	struct miscdevice *miscdev_ptr = file->private_data;
+// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+
+// 	int i, ret;
+// 	char c;
+
+// 	for (i = 0; i < sz; i++) {
+// 		ret = get_user(c, &buf[i]);
+// 		if (ret) 
+// 			return -EFAULT;
+
+// 		serial_write_one_char(serial, c);
+
+// 		if (c == '\n')
+// 			serial_write_one_char(serial, '\r');
+// 	}
+
+// 	return sz;
+// }
+
+// static void serial_tx_done(void *param)
+// {
+// 	struct serial_dev *serial = param;
+// 	complete(&serial->txcomp);
+// }
+
+// static ssize_t serial_write_dma(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
+// {
+// 	struct miscdevice *miscdev_ptr = file->private_data;
+// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+	
+// 	unsigned long flags;
+// 	dma_addr_t dma_addr;
+// 	dma_cookie_t cookie;
+// 	size_t len;
+// 	int ret = 0;
+// 	struct dma_async_tx_descriptor *desc;
+
+// 	/* Prevent concurrent Tx */
+// 	spin_lock_irqsave(&serial->lock, flags);
+// 	if (serial->txongoing) {
+// 		spin_unlock_irqrestore(&serial->lock, flags);
+// 		return -EBUSY;
+// 	}
+// 	serial->txongoing = true;
+// 	spin_unlock_irqrestore(&serial->lock, flags);
+
+// 	len = min_t(size_t, SERIAL_BUFSIZE, sz);
+
+// 	ret = copy_from_user(serial->tx_buf, buf, len);
+// 	if (ret)
+// 		goto err;
+
+// 	dma_addr = dma_map_single(serial->dev, serial->tx_buf, len, DMA_TO_DEVICE);
+// 	if (dma_mapping_error(serial->dev, dma_addr))
+// 		goto err;
+
+// 	desc = dmaengine_prep_slave_single(serial->txchan, dma_addr, len, DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+
+// 	if (!desc) {
+// 		dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
+// 		goto err;
+// 	}
+
+// 	desc->callback = serial_tx_done;
+// 	desc->callback_param = serial;
+	
+// 	cookie = dmaengine_submit(desc);
+
+// 	ret = dma_submit_error(cookie);
+// 	if (ret)
+// 		goto err;
+
+// 	dma_async_issue_pending(serial->txchan);
+
+// 	wait_for_completion(&serial->txcomp);
+
+// 	dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
+
+// 	spin_lock_irqsave(&serial->lock, flags);
+// 	serial->txongoing = false;
+// 	spin_unlock_irqrestore(&serial->lock, flags);
+
+// 	return len;
+// err:
+// 	spin_lock_irqsave(&serial->lock, flags);
+// 	serial->txongoing = false;
+// 	spin_unlock_irqrestore(&serial->lock, flags);
+// 	return ret;
+// }
+
+// static long serial_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+// {
+// 	struct miscdevice *miscdev_ptr = file->private_data;
+// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+
+// 	int ret;
+
+// 	switch(cmd) {
+// 	case SERIAL_RESET_COUNTER:
+// 		atomic_set(&serial->counter, 0);
+// 		break;
+// 	case SERIAL_GET_COUNTER:
+// 		ret = put_user(atomic_read(&serial->counter), (unsigned int __user *) arg);
+// 		if (ret)
+// 			return -EFAULT;
+// 		break;
+// 	default:
+// 		return -EINVAL;
+// 	}
+
+// 	return 0;
+// }
+
+// static irqreturn_t serial_interrupt(int irq, void *dev_id) 
+// {
+// 	struct serial_dev *serial = dev_id;
+// 	char c;
+
+// 	spin_lock(&serial->lock);
+
+// 	c = reg_read(serial, UART_RX);
+
+// 	serial->rx_buf[serial->buf_wr++] = c;
+// 	if (SERIAL_BUFSIZE == serial->buf_wr)
+// 		serial->buf_wr = 0;
+
+// 	if (serial->buf_wr == serial->buf_rd) {
+// 		serial->buf_rd++;
+// 		if (SERIAL_BUFSIZE == serial->buf_rd)
+// 			serial->buf_rd = 0;
+// 	}
+
+// 	spin_unlock(&serial->lock);
+
+// 	wake_up(&serial->wait);
+
+// 	return IRQ_HANDLED;
+// }
+
+// static const struct file_operations serial_fops_pio = {
+// 	.owner = THIS_MODULE,
+// 	.read = serial_read,
+// 	.write = serial_write_pio,
+// 	.unlocked_ioctl = serial_ioctl,
+// };
+
+// static const struct file_operations serial_fops_dma = {
+// 	.owner = THIS_MODULE,
+// 	.read = serial_read,
+// 	.write = serial_write_dma,
+// 	.unlocked_ioctl = serial_ioctl,
+// };
+
+// static int serial_dma_setup(struct serial_dev *serial)
+// {
+// 	struct dma_slave_config txconf = {};
+// 	int ret;
+
+// 	serial->txchan = dma_request_chan(serial->dev, "tx");
+// 	if (IS_ERR(serial->txchan)) {
+// 		ret = PTR_ERR(serial->txchan);
+// 		serial->txchan = NULL;
+// 	}
+
+// 	serial->fifo_dma_addr = dma_map_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0);
+
+// 	if (dma_mapping_error(serial->dev, serial->fifo_dma_addr))
+// 		goto out_chan;
+
+// 	txconf.direction = DMA_MEM_TO_DEV;
+// 	txconf.dst_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
+// 	txconf.dst_addr = serial->fifo_dma_addr;
+
+// 	ret = dmaengine_slave_config(serial->txchan, &txconf);
+// 	if (ret)
+// 		goto out_unmap;
+
+// 	reg_write(serial, OMAP_UART_SCR_DMAMODE_CTL3 | OMAP_UART_SCR_TX_TRIG_GRANU1, UART_OMAP_SCR);
+
+// 	return 0;
+
+// out_unmap:
+// 	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
+	
+// out_chan:
+// 	dma_release_channel(serial->txchan);
+// 	return -ENODEV;
+// }
+
+// static void serial_dma_cleanup(struct serial_dev *serial)
+// {
+// 	dmaengine_terminate_sync(serial->txchan);
+// 	dma_release_channel(serial->txchan);
+// 	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
+// }
+
+static int serial_probe(struct platform_device *pdev)
+{
+	struct serial_dev *serial;
+	// int ret, irq;
+	// struct clk *clk;
+	// unsigned int baud_divisor, uartclk;
+
+	serial = devm_kzalloc(&pdev->dev, sizeof(*serial), GFP_KERNEL);
+	if (!serial)
+		return -ENOMEM;
+
+	serial->regs = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(serial->regs)) 
+		return PTR_ERR(serial->regs);
+
+	// irq = platform_get_irq(pdev, 0);
+	// if (irq < 0)
+	// 	return irq;
+
+	// ret = devm_request_irq(&pdev->dev, irq, serial_interrupt, 0, "serial-rx", serial);
+	// if (ret)
+	// 	return ret;
+
+	// init_waitqueue_head(&serial->wait);
+
+	// spin_lock_init(&serial->lock);
+
+	// serial->dev = &pdev->dev;
+	// init_completion(&serial->txcomp);
+
+	// pm_runtime_enable(&pdev->dev);
+	// pm_runtime_get_sync(&pdev->dev);
+
+	// /* Configure the baud rate to 115200 */
+	// clk = devm_clk_get(&pdev->dev, NULL);
+	// if (IS_ERR(clk)) {
+	// 	ret = PTR_ERR(clk);
+	// 	pm_runtime_disable(&pdev->dev);
+	// 	return ret;
+	// }
+
+	// uartclk = clk_get_rate(clk);
+	// baud_divisor = uartclk / 16 / 115200;
+
+	// reg_write(serial, 0x07, UART_OMAP_MDR1);
+	// reg_write(serial, 0x00, UART_LCR);
+	// reg_write(serial, UART_LCR_DLAB, UART_LCR);
+	// reg_write(serial, baud_divisor & 0xff, UART_DLL);
+	// reg_write(serial, (baud_divisor >> 8) & 0xff, UART_DLM);
+	// reg_write(serial, UART_LCR_WLEN8, UART_LCR);
+	// reg_write(serial, 0x00, UART_OMAP_MDR1);
+
+	// /* Clear UART FIFOs */
+	// reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
+	// reg_write(serial, UART_IER_RDI, UART_IER);
+
+	// platform_set_drvdata(pdev, serial);
+
+	// serial->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	// if (!serial->res)
+	// 	return -EINVAL;
+
+	// serial->miscdev.minor = MISC_DYNAMIC_MINOR;
+	// serial->miscdev.name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "serial-%llx", serial->res->start);
+	// serial->miscdev.parent = &pdev->dev;
+
+	// ret = serial_dma_setup(serial);
+	// if (ret) 
+	// 	serial->miscdev.fops = &serial_fops_pio;
+	// else
+	// 	serial->miscdev.fops = &serial_fops_dma;
+
+	// return misc_register(&serial->miscdev);
+}
+
+static int serial_remove(struct platform_device *pdev)
+{
+	// struct serial_dev *serial = platform_get_drvdata(pdev);
+
+	// if (serial->txchan) 
+	// 	serial_dma_cleanup(serial);
+
+	// misc_deregister(&serial->miscdev);
+
+	// pm_runtime_disable(&pdev->dev);
+
+	return 0;
+}
+
+/** @brief The of (open firmware) device id table that fetches from dtsi file */
+static const struct of_device_id serial_of_match[] = {
+	{ .compatible = "bootlin,serial", },
+	{ /* sentinel */},
+};
+
+static struct platform_driver serial_driver = {
+	.driver = {
+		.name = "serial",
+		.owner = THIS_MODULE,
+		.of_match_table = serial_of_match,
+	},
+	.probe = serial_probe,
+	.remove = serial_remove,
+};
+
+module_platform_driver(serial_driver);
+
+MODULE_LICENSE("GPL");
+
