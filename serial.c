@@ -8,14 +8,14 @@
 #include <linux/spinlock_types.h>
 #include <linux/wait.h>
 #include <linux/interrupt.h>
-#include <linux/pm_runtime.h>
+#include <linux/pm_runtime.h> /* to access power management related functions */
 #include <linux/init.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/serial_reg.h>
-#include <linux/io.h>
+#include <linux/serial_reg.h> /* to access uart peripheral registers' definitions */
+#include <linux/io.h> /* to access read/write functions from/to mmio region */
 #include <linux/clk.h>
 
 
@@ -31,47 +31,58 @@
 struct serial_dev {
 	/** @brief memory mapped i/o registers base address */
 	void __iomem *regs;
-	struct miscdevice miscdev;
-	atomic_t counter;
-	char rx_buf[SERIAL_BUFSIZE];
-	char tx_buf[SERIAL_BUFSIZE];
-	unsigned int buf_rd;
-	unsigned int buf_wr;
-	wait_queue_head_t wait;
-	spinlock_t lock;
-	struct resource *res;
-	struct device *dev;
-	struct dma_chan *txchan;
-	dma_addr_t fifo_dma_addr;
-	bool txongoing;
-	struct completion txcomp;
+	// struct miscdevice miscdev;
+	// atomic_t counter;
+	// char rx_buf[SERIAL_BUFSIZE];
+	// char tx_buf[SERIAL_BUFSIZE];
+	// unsigned int buf_rd;
+	// unsigned int buf_wr;
+	// wait_queue_head_t wait;
+	// spinlock_t lock;
+	// struct resource *res;
+	// struct device *dev;
+	// struct dma_chan *txchan;
+	// dma_addr_t fifo_dma_addr;
+	// bool txongoing;
+	// struct completion txcomp;
 };
 
-// static u32 reg_read(struct serial_dev *serial, unsigned int reg)
-// {
-// 	return readl(serial->regs + (reg * 4));
-// }
+/* -------- wrappers functions to access registers -------- */
+/*
+in general, serial peripheral register addresses incremented by 1 but accesses as a word length
+therefore, next register address is incremented by 4 byte 
+*/
+static u32 reg_read(struct serial_dev *serial, unsigned int reg)
+{
+	return readl(serial->regs + (reg * 4));
+}
 
-// static void reg_write(struct serial_dev *serial, u32 val, unsigned int reg)
-// {
-// 	writel(val, serial->regs + (reg * 4));
-// }
+static void reg_write(struct serial_dev *serial, u32 val, unsigned int reg)
+{
+	writel(val, serial->regs + (reg * 4));
+}
 
-// static void serial_write_one_char(struct serial_dev *serial, char c) 
-// {
-// 	unsigned long flags;
+static void serial_write_one_char(struct serial_dev *serial, char c) 
+{
+	unsigned long flags;
 
-// 	spin_lock_irqsave(&serial->lock, flags);
+	// spin_lock_irqsave(&serial->lock, flags);
 
-// 	while (!(reg_read(serial, UART_LSR) & UART_LSR_THRE))
-// 		cpu_relax();
+	// wait until transmit buffer is empty and ready to send one character
+	while (!(reg_read(serial, UART_LSR) & UART_LSR_THRE))
+	{
+		// ensure that cpu does not optimize the loop (it may optimize and may remove while loop)	
+		// in ARM, this only calls `barrier()` or `nop` instructions
+		cpu_relax();
+	}
 
-// 	reg_write(serial, c, UART_TX);
+	// put the character into transmit register of uart
+	reg_write(serial, c, UART_TX);
 	
-// 	spin_unlock_irqrestore(&serial->lock, flags);
+	// spin_unlock_irqrestore(&serial->lock, flags);
 
-// 	atomic_inc(&serial->counter);
-// }
+	// atomic_inc(&serial->counter);
+}
 
 // static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_t *offs)
 // {
@@ -302,10 +313,14 @@ static int serial_probe(struct platform_device *pdev)
 	// struct clk *clk;
 	// unsigned int baud_divisor, uartclk;
 
+	/* serial device has a lifetime as long as platform device exists */
 	serial = devm_kzalloc(&pdev->dev, sizeof(*serial), GFP_KERNEL);
 	if (!serial)
 		return -ENOMEM;
 
+	/* pdev corresponds to device that should be found at device tree file
+	and second parameter zero means first <reg> property found at the same
+	device tree file. found this reg property and maps the serial->regs  */
 	serial->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(serial->regs)) 
 		return PTR_ERR(serial->regs);
@@ -325,10 +340,21 @@ static int serial_probe(struct platform_device *pdev)
 	// serial->dev = &pdev->dev;
 	// init_completion(&serial->txcomp);
 
-	// pm_runtime_enable(&pdev->dev);
-	// pm_runtime_get_sync(&pdev->dev);
+	/*
+	they are about power management setup
+	*/
+	pm_runtime_enable(&pdev->dev);
+	pm_runtime_get_sync(&pdev->dev);
 
 	// /* Configure the baud rate to 115200 */
+	int ret;
+	u32 uart_clk;
+	ret = of_property_read_u32(pdev->dev.of_node, "clock frequency", &uart_clk);
+	if(ret)
+	{
+		dev_error("Error ");
+		return ret;
+	}
 	// clk = devm_clk_get(&pdev->dev, NULL);
 	// if (IS_ERR(clk)) {
 	// 	ret = PTR_ERR(clk);
@@ -337,19 +363,19 @@ static int serial_probe(struct platform_device *pdev)
 	// }
 
 	// uartclk = clk_get_rate(clk);
-	// baud_divisor = uartclk / 16 / 115200;
+	baud_divisor = uartclk / 16 / 115200;
 
-	// reg_write(serial, 0x07, UART_OMAP_MDR1);
-	// reg_write(serial, 0x00, UART_LCR);
-	// reg_write(serial, UART_LCR_DLAB, UART_LCR);
-	// reg_write(serial, baud_divisor & 0xff, UART_DLL);
-	// reg_write(serial, (baud_divisor >> 8) & 0xff, UART_DLM);
-	// reg_write(serial, UART_LCR_WLEN8, UART_LCR);
-	// reg_write(serial, 0x00, UART_OMAP_MDR1);
+	reg_write(serial, 0x07, UART_OMAP_MDR1);
+	reg_write(serial, 0x00, UART_LCR);
+	reg_write(serial, UART_LCR_DLAB, UART_LCR);
+	reg_write(serial, baud_divisor & 0xff, UART_DLL);
+	reg_write(serial, (baud_divisor >> 8) & 0xff, UART_DLM);
+	reg_write(serial, UART_LCR_WLEN8, UART_LCR);
+	reg_write(serial, 0x00, UART_OMAP_MDR1);
 
-	// /* Clear UART FIFOs */
-	// reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
-	// reg_write(serial, UART_IER_RDI, UART_IER);
+	/* Clear UART internal FIFOs */
+	reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
+	reg_write(serial, UART_IER_RDI, UART_IER);
 
 	// platform_set_drvdata(pdev, serial);
 
@@ -379,7 +405,7 @@ static int serial_remove(struct platform_device *pdev)
 
 	// misc_deregister(&serial->miscdev);
 
-	// pm_runtime_disable(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
 
 	return 0;
 }

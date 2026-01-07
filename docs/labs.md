@@ -198,4 +198,4 @@ Pinmux sonrası UART cihazlarımızın tanımlamasını yapabiliriz
 
 **IMPORTANT:** This is a good example of how we can override definitions in the Device Tree. uart5 and uart6 are already enabled and muxed in **arch/arm64/boot/dts/ti/k3-am625-beagleplay.dts**. In the above code, we just override the compatible property to use our driver instead of using the default one.
 
-
+serial.c içerisinde boilerplate/basit bir serial sürücü yazarak device tree içerisinde clock ayarı ve register property ile register'ların base adresini alarak terminale basit bir karakter yazdıracak kadar bir sürücü gerçekleştirdik. ileride bunu daha da ilerleteceğiz.
