@@ -3,6 +3,7 @@
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
 #include <linux/atomic.h>
+#include <linux/fs.h> /* to access file operations struct*/
 #include <linux/dmaengine.h>
 #include <linux/spinlock.h>
 #include <linux/spinlock_types.h>
@@ -18,9 +19,10 @@
 #include <linux/io.h> /* to access read/write functions from/to mmio region */
 #include <linux/clk.h>
 
-
-// #define SERIAL_RESET_COUNTER 0
-// #define SERIAL_GET_COUNTER 1
+/** @brief ioctl command to reset counter to zero of how many bytes written */
+#define IOCTL_CMD_SERIAL_RESET_COUNTER 0
+/** @brief ioctl command to get counter of how many bytes written */
+#define IOCTL_CMD_SERIAL_GET_COUNTER 1
 
 // #define OMAP_UART_SCR_DMAMODE_CTL3 0x7
 // #define OMAP_UART_SCR_TX_TRIG_GRANU1 BIT(6)
@@ -31,15 +33,18 @@
 struct serial_dev {
 	/** @brief memory mapped i/o registers base address */
 	void __iomem *regs;
-	// struct miscdevice miscdev;
-	// atomic_t counter;
+	/** @brief serial driver allocates misc device for itself */
+	struct miscdevice miscdev;
+	/** @brief counter of sending bytes (characters to written to terminal) */
+	atomic_t counter;
 	// char rx_buf[SERIAL_BUFSIZE];
 	// char tx_buf[SERIAL_BUFSIZE];
 	// unsigned int buf_rd;
 	// unsigned int buf_wr;
 	// wait_queue_head_t wait;
 	// spinlock_t lock;
-	// struct resource *res;
+	/** @brief resource pointer to show register physical address of devices */
+	struct resource *res;
 	// struct device *dev;
 	// struct dma_chan *txchan;
 	// dma_addr_t fifo_dma_addr;
@@ -50,7 +55,7 @@ struct serial_dev {
 /* -------- wrappers functions to access registers -------- */
 /*
 in general, serial peripheral register addresses incremented by 1 but accesses as a word length
-therefore, next register address is incremented by 4 byte 
+therefore, next register address is incremented by 4 bytes.
 */
 static u32 reg_read(struct serial_dev *serial, unsigned int reg)
 {
@@ -81,53 +86,75 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 	
 	// spin_unlock_irqrestore(&serial->lock, flags);
 
-	// atomic_inc(&serial->counter);
+	atomic_inc(&serial->counter);
 }
 
-// static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_t *offs)
-// {
-// 	struct miscdevice *miscdev_ptr = file->private_data;
-// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+/**
+ * @brief Read function for serial device
+ * @param file
+ * @param buf , buffer coming from user space (specified by __user)
+ * @param sz
+ * @param oofs
+ * @return _EOPNOTSUPP, the function is not supported yet. 
+ */
+static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_t *offs)
+{
+	// struct miscdevice *miscdev_ptr = file->private_data;
+	// struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 
-// 	unsigned long flags;
-// 	char c;
+	// unsigned long flags;
+	// char c;
 
-// 	wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
+	// wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
 
-// 	spin_lock_irqsave(&serial->lock, flags);
+	// spin_lock_irqsave(&serial->lock, flags);
 
-// 	c = serial->rx_buf[serial->buf_rd++];
-// 	if (SERIAL_BUFSIZE == serial->buf_rd)
-// 		serial->buf_rd = 0;
+	// c = serial->rx_buf[serial->buf_rd++];
+	// if (SERIAL_BUFSIZE == serial->buf_rd)
+	// 	serial->buf_rd = 0;
 
-// 	spin_unlock_irqrestore(&serial->lock, flags);
+	// spin_unlock_irqrestore(&serial->lock, flags);
 
-// 	put_user(c, buf);
+	// put_user(c, buf);
 
-// 	return 1;
-// }
+	return 1;
+}
 
-// static ssize_t serial_write_pio(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
-// {
-// 	struct miscdevice *miscdev_ptr = file->private_data;
-// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+/** @brief function to copy user data to the serial port, writing characters one by one */
+static ssize_t serial_write_pio(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
+{
+	/* 
+	The first thing to do is to retrieve the serial_dev structure from the miscdevice structure itself, accessible
+	through the private_data field of the open file structure (file).
+	At the time we registered our misc device, we didn’t keep any pointer to the serial_dev structure. However,
+	as the struct miscdevice structure is accessible through file->private_data, and is a member of the
+	serial_dev structure, we can use a magic macro to compute the address of the parent structure:
+	*/
+	struct miscdevice *miscdev_ptr = file->private_data;
+	/**
+	find parent structure address which embeds miscdev_ptr address whose field name is miscdev */
+	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 
-// 	int i, ret;
-// 	char c;
+	int i, ret;
+	char c;
 
-// 	for (i = 0; i < sz; i++) {
-// 		ret = get_user(c, &buf[i]);
-// 		if (ret) 
-// 			return -EFAULT;
+	for (i = 0; i < sz; i++) 
+	{
+		/* buffer is user space buffer, therefore we should first map into kernel space.
+		it is forbidden to directly use it. use one of possible copy function between spaces.
+		*/
+		ret = get_user(c, &buf[i]);
+		if (ret) 
+			return -EFAULT;
 
-// 		serial_write_one_char(serial, c);
+		serial_write_one_char(serial, c);
 
-// 		if (c == '\n')
-// 			serial_write_one_char(serial, '\r');
-// 	}
+		if (c == '\n')
+			serial_write_one_char(serial, '\r');
+	}
 
-// 	return sz;
-// }
+	return sz;
+}
 
 // static void serial_tx_done(void *param)
 // {
@@ -200,28 +227,32 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 // 	return ret;
 // }
 
-// static long serial_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-// {
-// 	struct miscdevice *miscdev_ptr = file->private_data;
-// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+/** @brief The io control function to provide drivers specific commands */
+static long serial_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct miscdevice *miscdev_ptr = file->private_data;
+	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 
-// 	int ret;
+	int ret;
 
-// 	switch(cmd) {
-// 	case SERIAL_RESET_COUNTER:
-// 		atomic_set(&serial->counter, 0);
-// 		break;
-// 	case SERIAL_GET_COUNTER:
-// 		ret = put_user(atomic_read(&serial->counter), (unsigned int __user *) arg);
-// 		if (ret)
-// 			return -EFAULT;
-// 		break;
-// 	default:
-// 		return -EINVAL;
-// 	}
+	switch(cmd) 
+	{
+	case IOCTL_CMD_SERIAL_RESET_COUNTER:
+		atomic_set(&serial->counter, 0);
+		break;
+	
+	case IOCTL_CMD_SERIAL_GET_COUNTER:
+		// copy data to user space
+		ret = put_user(atomic_read(&serial->counter), (unsigned int __user *) arg);
+		if (ret)
+			return -EFAULT;
+		break;
+	default:
+		return -EINVAL;
+	}
 
-// 	return 0;
-// }
+	return 0;
+}
 
 // static irqreturn_t serial_interrupt(int irq, void *dev_id) 
 // {
@@ -249,12 +280,18 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 // 	return IRQ_HANDLED;
 // }
 
-// static const struct file_operations serial_fops_pio = {
-// 	.owner = THIS_MODULE,
-// 	.read = serial_read,
-// 	.write = serial_write_pio,
-// 	.unlocked_ioctl = serial_ioctl,
-// };
+/**
+ * @brief File operations for our serial device. this structure should have function pointers
+ for file operations and their prototypes are defined in <linux/fs.h>
+ */
+static const struct file_operations serial_fops_pio = {
+	/** open function (default implemented) to this module is incremented counter of users number for this module
+	otherwise, there is situation where kernel crashes when we rmmod while device is opened */
+	.owner = THIS_MODULE,
+	.read = serial_read,
+	.write = serial_write_pio,
+	.unlocked_ioctl = serial_ioctl,
+};
 
 // static const struct file_operations serial_fops_dma = {
 // 	.owner = THIS_MODULE,
@@ -309,7 +346,8 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 static int serial_probe(struct platform_device *pdev)
 {
 	struct serial_dev *serial;
-	// int ret, irq;
+	int ret;
+	// int irq;
 	// struct clk *clk;
 	// unsigned int baud_divisor, uartclk;
 
@@ -320,7 +358,8 @@ static int serial_probe(struct platform_device *pdev)
 
 	/* pdev corresponds to device that should be found at device tree file
 	and second parameter zero means first <reg> property found at the same
-	device tree file. found this reg property and maps the serial->regs  */
+	device tree file. found this reg property and maps the serial->regs.
+	it allocates resources for registers memory range, creates pointers for that  */
 	serial->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(serial->regs)) 
 		return PTR_ERR(serial->regs);
@@ -347,7 +386,7 @@ static int serial_probe(struct platform_device *pdev)
 	pm_runtime_get_sync(&pdev->dev);
 
 	// /* Configure the baud rate to 115200 */
-	int ret;
+	
 	u32 uart_clk;
 	ret = of_property_read_u32(pdev->dev.of_node, "clock frequency", &uart_clk);
 	if(ret)
@@ -377,33 +416,47 @@ static int serial_probe(struct platform_device *pdev)
 	reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
 	reg_write(serial, UART_IER_RDI, UART_IER);
 
-	// platform_set_drvdata(pdev, serial);
+	/**
+	associates platform device with our serial driver, set driver data */
+	platform_set_drvdata(pdev, serial);
 
-	// serial->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	// if (!serial->res)
-	// 	return -EINVAL;
+	/**
+	used to get resource of platform(resource points registers physical address)
+	Memory Type of resource is selected with `IORESOURCE_MEM`, other option is interrupt resource named IRQ number
+	0 means the first resource described in dtsi file.
+	 */
+	serial->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!serial->res)
+	{
+		return -EINVAL;
+	}
 
-	// serial->miscdev.minor = MISC_DYNAMIC_MINOR;
-	// serial->miscdev.name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "serial-%llx", serial->res->start);
-	// serial->miscdev.parent = &pdev->dev;
+	serial->miscdev.minor = MISC_DYNAMIC_MINOR;
+	/* 
+	unique name is satisfied by adding physical address of first register.
+	get resource pointer and append the name
+	*/
+	serial->miscdev.name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "serial-%llx", serial->res->start);
+	
+	serial->miscdev.parent = &pdev->dev;
 
 	// ret = serial_dma_setup(serial);
 	// if (ret) 
-	// 	serial->miscdev.fops = &serial_fops_pio;
+		serial->miscdev.fops = &serial_fops_pio;
 	// else
 	// 	serial->miscdev.fops = &serial_fops_dma;
 
-	// return misc_register(&serial->miscdev);
+	return misc_register(&serial->miscdev);
 }
 
 static int serial_remove(struct platform_device *pdev)
 {
-	// struct serial_dev *serial = platform_get_drvdata(pdev);
+	struct serial_dev *serial = platform_get_drvdata(pdev);
 
 	// if (serial->txchan) 
 	// 	serial_dma_cleanup(serial);
 
-	// misc_deregister(&serial->miscdev);
+	misc_deregister(&serial->miscdev);
 
 	pm_runtime_disable(&pdev->dev);
 

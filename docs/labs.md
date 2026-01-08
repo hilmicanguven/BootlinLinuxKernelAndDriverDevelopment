@@ -199,3 +199,24 @@ Pinmux sonrası UART cihazlarımızın tanımlamasını yapabiliriz
 **IMPORTANT:** This is a good example of how we can override definitions in the Device Tree. uart5 and uart6 are already enabled and muxed in **arch/arm64/boot/dts/ti/k3-am625-beagleplay.dts**. In the above code, we just override the compatible property to use our driver instead of using the default one.
 
 serial.c içerisinde boilerplate/basit bir serial sürücü yazarak device tree içerisinde clock ayarı ve register property ile register'ların base adresini alarak terminale basit bir karakter yazdıracak kadar bir sürücü gerçekleştirdik. ileride bunu daha da ilerleteceğiz.
+
+Serial sürücüsünü "misc" device olarak da ekleyebiliriz. ya da farklı bir deyişle Serial sürücümüz "misc" framework'ünden bir device'a sahip olabilir. misc device'ın sahip olması gereken bazı field'lar mevcut
+- minor, minor number of device, `MISC_DYNAMIC_MINOR` dinamik olarak otomatik bir değer assign eder.
+- name, unique name
+- parent, underlying physical device
+- fops, file operations (read, write, ioctl vb)
+
+**NOT:** Seri sürücü içerisinde bulunan read/write fonksiyonlarını kullanmak için user space'den gelen buffer'ları doğrudan kullanamayız. Bunların Kernel'de olan bir adrese kopyalanması gerekir. Bunun için çeşitli arayüzler mevcut:
+- Tek bir byte için
+    - `get_user(v, p);`
+    - `put_user(v, p);`
+- Buffer için
+    - `get_user`
+    - `put_user(v, p)`
+    - `copy_to_user`
+    - `unsigned long copy_from_user(void *to, const void __user *from, unsigned long n);`
+
+Serial sürücünün ioctl fonksiyonunu kullanmak için user space uygulaması yazılması gereklidir. bunun için de C dosyalarını oluşturduk. Bunların cross-compile yapılarak target'da koşacak executable dosyaları oluştururuz.
+
+`aarch64-linux-gnueabi-gcc -static -o serial-get-counter serial-get-counter.c`
+`aarch64-linux-gnueabi-gcc -static -o serial-reset-counter serial-reset-counter.c`

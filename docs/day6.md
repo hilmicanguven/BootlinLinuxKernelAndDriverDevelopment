@@ -27,3 +27,6 @@ struct miscdevice {
 };
 ```
 
+Platform bus nedir?  
+
+Linux’ta PCI, USB gibi karmaşık bus’lar için özel altyapılar vardır. Ancak SoC içindeki UART, I²C, SPI gibi çevre birimleri doğrudan CPU adres alanına bağlanır. Bunlar için “platform bus” adı verilen basit bir pseudo-bus tanımlanmıştır. `struct platform_device` rolü Donanımın kernel’e tanıtılması için kullanılır. İçinde cihazın adı, ID’si, kaynakları (I/O adresleri, IRQ numaraları) ve struct device alanı bulunur. Kernel, bu yapı sayesinde cihazı uygun platform_driver ile eşleştirir.
