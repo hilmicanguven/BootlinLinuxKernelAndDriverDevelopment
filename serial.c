@@ -7,8 +7,8 @@
 #include <linux/dmaengine.h>
 #include <linux/spinlock.h>
 #include <linux/spinlock_types.h>
-#include <linux/wait.h>
-#include <linux/interrupt.h>
+#include <linux/wait.h> /* to access to wait on queue functions */
+#include <linux/interrupt.h> /* to access irq related definitions */
 #include <linux/pm_runtime.h> /* to access power management related functions */
 #include <linux/init.h>
 #include <linux/miscdevice.h>
@@ -27,7 +27,8 @@
 // #define OMAP_UART_SCR_DMAMODE_CTL3 0x7
 // #define OMAP_UART_SCR_TX_TRIG_GRANU1 BIT(6)
 
-// #define SERIAL_BUFSIZE 16
+/** @brief The size of UART Receive Buffer (bytes were read will be stored in this buffer) */
+#define SERIAL_BUFSIZE 16
 
 /** @brief Serial device structure that describes peripherals */
 struct serial_dev {
@@ -35,13 +36,18 @@ struct serial_dev {
 	void __iomem *regs;
 	/** @brief serial driver allocates misc device for itself */
 	struct miscdevice miscdev;
-	/** @brief counter of sending bytes (characters to written to terminal) */
+	/** @brief counter of sending bytes (number of characters to be written to terminal) */
 	atomic_t counter;
-	// char rx_buf[SERIAL_BUFSIZE];
+	/** @brief UART Receive Buffer (bytes were read will be stored in this buffer). 
+	it is filled within interrupt handler. */
+	char rx_buf[SERIAL_BUFSIZE];
 	// char tx_buf[SERIAL_BUFSIZE];
-	// unsigned int buf_rd;
-	// unsigned int buf_wr;
-	// wait_queue_head_t wait;
+	/** @brief The cursor of read buffer where last index that we read. used for implementing circular buffer */
+	unsigned int buf_rd;
+	/** @brief The cursor of read buffer where last index that we write. used for implementing circular buffer */
+	unsigned int buf_wr;
+	/** @brief it is used in read function until data becomes available on `rx_buf` */
+	wait_queue_head_t wait;
 	// spinlock_t lock;
 	/** @brief resource pointer to show register physical address of devices */
 	struct resource *res;
@@ -90,7 +96,8 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 }
 
 /**
- * @brief Read function for serial device
+ * @brief Read function for serial device. The data will be read 'rx_buf' of serial device.
+ if there is no data inside of it, then sleep until data becomes available
  * @param file
  * @param buf , buffer coming from user space (specified by __user)
  * @param sz
@@ -99,23 +106,29 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
  */
 static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_t *offs)
 {
-	// struct miscdevice *miscdev_ptr = file->private_data;
-	// struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+	struct miscdevice *miscdev_ptr = file->private_data;
+	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 
 	// unsigned long flags;
-	// char c;
+	char c;
 
-	// wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
+	/* wait until condition (buffer not empty) occurs. it is interruptible 
+	*/
+	wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
 
 	// spin_lock_irqsave(&serial->lock, flags);
 
-	// c = serial->rx_buf[serial->buf_rd++];
-	// if (SERIAL_BUFSIZE == serial->buf_rd)
-	// 	serial->buf_rd = 0;
+	c = serial->rx_buf[serial->buf_rd++];
+
+	if (SERIAL_BUFSIZE == serial->buf_rd)
+	{
+		serial->buf_rd = 0;
+	}
 
 	// spin_unlock_irqrestore(&serial->lock, flags);
 
-	// put_user(c, buf);
+	// copy character into user buffer
+	put_user(c, buf);
 
 	return 1;
 }
@@ -254,31 +267,46 @@ static long serial_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return 0;
 }
 
-// static irqreturn_t serial_interrupt(int irq, void *dev_id) 
-// {
-// 	struct serial_dev *serial = dev_id;
-// 	char c;
+/** @brief The interrupt handler that triggered when uart controller receives a message 
+ *	@param `irq` IRQ number
+ *	@param `dev_id` input parameter specified when creating irq handler
+ *	@return IRQ_HANDLED, irq handled successfully
+ *
+ * @note in most cases, we need to acknowledge the interrupt controller that we get the interrupt and operate it
+ * otherwise, it continuously generates same interrupt. this acknowledgement is hardware specific. for our board, it 
+ * is simply enough to read RX register of uart peripheral.
+*/
+static irqreturn_t serial_interrupt(int irq, void *dev_id) 
+{
+	struct serial_dev *serial = dev_id;
+	char c;
 
-// 	spin_lock(&serial->lock);
+	spin_lock(&serial->lock);
 
-// 	c = reg_read(serial, UART_RX);
+	c = reg_read(serial, UART_RX);
 
-// 	serial->rx_buf[serial->buf_wr++] = c;
-// 	if (SERIAL_BUFSIZE == serial->buf_wr)
-// 		serial->buf_wr = 0;
+	serial->rx_buf[serial->buf_wr++] = c;
+	
+	if (SERIAL_BUFSIZE == serial->buf_wr)
+	{
+		serial->buf_wr = 0;
+	}
 
-// 	if (serial->buf_wr == serial->buf_rd) {
-// 		serial->buf_rd++;
-// 		if (SERIAL_BUFSIZE == serial->buf_rd)
-// 			serial->buf_rd = 0;
-// 	}
+	if (serial->buf_wr == serial->buf_rd) 
+	{
+		serial->buf_rd++;
+		if (SERIAL_BUFSIZE == serial->buf_rd)
+		{
+			serial->buf_rd = 0;
+		}
+	}
 
-// 	spin_unlock(&serial->lock);
+	spin_unlock(&serial->lock);
 
-// 	wake_up(&serial->wait);
+	wake_up(&serial->wait);
 
-// 	return IRQ_HANDLED;
-// }
+	return IRQ_HANDLED;
+}
 
 /**
  * @brief File operations for our serial device. this structure should have function pointers
@@ -364,15 +392,27 @@ static int serial_probe(struct platform_device *pdev)
 	if (IS_ERR(serial->regs)) 
 		return PTR_ERR(serial->regs);
 
-	// irq = platform_get_irq(pdev, 0);
-	// if (irq < 0)
-	// 	return irq;
+	/**
+	request irq number, acquire it from the dtsi file. 0 means first irq number in that file 
+	alternatively, we can get these irqs by their names which are also defined in "interrupt-names property" 
+	*/
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0)
+	{
+		// returns negative if an error happened
+		return irq;
+	}
 
-	// ret = devm_request_irq(&pdev->dev, irq, serial_interrupt, 0, "serial-rx", serial);
-	// if (ret)
-	// 	return ret;
+	/**
+	associate(match) interrupt handler `serial_interrupt` and irq number `irq` 
+	last parameter argument to interrupt handler which holds all required driver-specific information */
+	ret = devm_request_irq(&pdev->dev, irq, serial_interrupt, 0, "serial-rx", serial);
+	if (ret)
+		return ret;
 
-	// init_waitqueue_head(&serial->wait);
+	/** initialize waiting queue in the driver. 
+	 */
+	init_waitqueue_head(&serial->wait);
 
 	// spin_lock_init(&serial->lock);
 
@@ -414,6 +454,7 @@ static int serial_probe(struct platform_device *pdev)
 
 	/* Clear UART internal FIFOs */
 	reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
+	/** enable the interrupts for receiving */
 	reg_write(serial, UART_IER_RDI, UART_IER);
 
 	/**

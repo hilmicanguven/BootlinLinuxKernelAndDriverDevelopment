@@ -220,3 +220,7 @@ Serial sürücünün ioctl fonksiyonunu kullanmak için user space uygulaması y
 
 `aarch64-linux-gnueabi-gcc -static -o serial-get-counter serial-get-counter.c`
 `aarch64-linux-gnueabi-gcc -static -o serial-reset-counter serial-reset-counter.c`
+
+Seri sürücümüze `read()` fonksiyonunu ekleyeceğiz. Bu esnada, uart controller'ın byte aldıkça üreteceği interrupt kaynağını kullanacağız.
+
+interrupt kullanmak için "irq" numarasını bilmemiz gerekir ve bu device tree içerisinde(*.dtsi dosyasında interrupts propert'si içerisinde, custom olan içerisinden include ettiğimiz) bulunur. sonrasında irq request ile bu irq'ya karşılık gelen handler'ı birbirine bağlarız.
