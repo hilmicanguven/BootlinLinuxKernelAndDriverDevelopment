@@ -224,3 +224,7 @@ Serial sürücünün ioctl fonksiyonunu kullanmak için user space uygulaması y
 Seri sürücümüze `read()` fonksiyonunu ekleyeceğiz. Bu esnada, uart controller'ın byte aldıkça üreteceği interrupt kaynağını kullanacağız.
 
 interrupt kullanmak için "irq" numarasını bilmemiz gerekir ve bu device tree içerisinde(*.dtsi dosyasında interrupts propert'si içerisinde, custom olan içerisinden include ettiğimiz) bulunur. sonrasında irq request ile bu irq'ya karşılık gelen handler'ı birbirine bağlarız.
+
+linux kernel locking mekanizmalarını öğrendikten sonra serial driver içerisine shared resource'a yapılan erişimlerde concurrent access'i engellemiş olacağız. Lock'lamaz istediğimiz 2 kısım var. Bunlara farklı context'lerden erişim yapıldığı için (Interrupt Context ve Regular Process Context) lock'lama ihtiyacı duyarız.
+    - Register Accesses
+    - Buffer yönetimi için yaptığımız işlemler

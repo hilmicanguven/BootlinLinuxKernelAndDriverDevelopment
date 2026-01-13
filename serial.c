@@ -5,8 +5,8 @@
 #include <linux/atomic.h>
 #include <linux/fs.h> /* to access file operations struct*/
 #include <linux/dmaengine.h>
-#include <linux/spinlock.h>
-#include <linux/spinlock_types.h>
+#include <linux/spinlock.h>	/* to access spinlock locking mechanism objetcs */
+#include <linux/spinlock_types.h> /* to access spinlock locking mechanism objetcs */
 #include <linux/wait.h> /* to access to wait on queue functions */
 #include <linux/interrupt.h> /* to access irq related definitions */
 #include <linux/pm_runtime.h> /* to access power management related functions */
@@ -34,21 +34,31 @@
 struct serial_dev {
 	/** @brief memory mapped i/o registers base address */
 	void __iomem *regs;
+	
 	/** @brief serial driver allocates misc device for itself */
 	struct miscdevice miscdev;
+	
 	/** @brief counter of sending bytes (number of characters to be written to terminal) */
 	atomic_t counter;
+	
 	/** @brief UART Receive Buffer (bytes were read will be stored in this buffer). 
 	it is filled within interrupt handler. */
 	char rx_buf[SERIAL_BUFSIZE];
+	
 	// char tx_buf[SERIAL_BUFSIZE];
+	
 	/** @brief The cursor of read buffer where last index that we read. used for implementing circular buffer */
 	unsigned int buf_rd;
+	
 	/** @brief The cursor of read buffer where last index that we write. used for implementing circular buffer */
 	unsigned int buf_wr;
+	
 	/** @brief it is used in read function until data becomes available on `rx_buf` */
 	wait_queue_head_t wait;
-	// spinlock_t lock;
+	
+	/** @brief Driver spinlock object to prevent concurrent access to shared resources */
+	spinlock_t lock;
+	
 	/** @brief resource pointer to show register physical address of devices */
 	struct resource *res;
 	// struct device *dev;
@@ -77,7 +87,7 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 {
 	unsigned long flags;
 
-	// spin_lock_irqsave(&serial->lock, flags);
+	spin_lock_irqsave(&serial->lock, flags);
 
 	// wait until transmit buffer is empty and ready to send one character
 	while (!(reg_read(serial, UART_LSR) & UART_LSR_THRE))
@@ -90,8 +100,13 @@ static void serial_write_one_char(struct serial_dev *serial, char c)
 	// put the character into transmit register of uart
 	reg_write(serial, c, UART_TX);
 	
-	// spin_unlock_irqrestore(&serial->lock, flags);
+	spin_unlock_irqrestore(&serial->lock, flags);
 
+	/**
+	on some processors, even `counter++` may not be atomic.
+	and this counter is resetted in somewhere else in the driver.
+	therefore, it is better to use atomic operations to increment its value instead of `serial->counter++` .
+	 */
 	atomic_inc(&serial->counter);
 }
 
@@ -109,14 +124,30 @@ static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_
 	struct miscdevice *miscdev_ptr = file->private_data;
 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 
-	// unsigned long flags;
+	unsigned long flags;
 	char c;
 
 	/* wait until condition (buffer not empty) occurs. it is interruptible 
 	*/
 	wait_event_interruptible(serial->wait, serial->buf_rd != serial->buf_wr);
 
-	// spin_lock_irqsave(&serial->lock, flags);
+	/*
+	used spinlock to protect register access and buffer operations.it used irqsave and restore because
+	
+	If we use holds a normal spin_lock() and 
+	an interrupt (in this case, irq is triggered whenever uart peripheral receives a byte) triggered on the same local CPU and 
+	the IRQ handler tries to take the same lock
+	!! deadlock occurs, as a result of that:
+    	process context holds the lock
+    	IRQ handler spins forever waiting for it
+		process context can’t run to release it (it is preempted by the interrupt and never return)
+
+	to prevent this, we must disable local interrupts while holding the spinlock.
+	that's what _irqsave and _restore are used for
+
+	note: flags variable hold interrupt state before disabled.
+	 */
+	spin_lock_irqsave(&serial->lock, flags);
 
 	c = serial->rx_buf[serial->buf_rd++];
 
@@ -125,7 +156,7 @@ static ssize_t serial_read(struct file *file, char __user *buf, size_t sz, loff_
 		serial->buf_rd = 0;
 	}
 
-	// spin_unlock_irqrestore(&serial->lock, flags);
+	spin_unlock_irqrestore(&serial->lock, flags);
 
 	// copy character into user buffer
 	put_user(c, buf);
@@ -281,6 +312,15 @@ static irqreturn_t serial_interrupt(int irq, void *dev_id)
 	struct serial_dev *serial = dev_id;
 	char c;
 
+	/*
+	used spinlock to protect register access and buffer operations.
+	
+	this handler can not be interrupted by itself on the same local CPU
+	therefore IRQ handlers do not need to disable interrupts again for self-protection.
+	but still need to be locked to prevent other cpu cores
+	unnecessary to use _irqlock/restore in this case
+
+	 */
 	spin_lock(&serial->lock);
 
 	c = reg_read(serial, UART_RX);
@@ -375,7 +415,7 @@ static int serial_probe(struct platform_device *pdev)
 {
 	struct serial_dev *serial;
 	int ret;
-	// int irq;
+	int irq;
 	// struct clk *clk;
 	// unsigned int baud_divisor, uartclk;
 
@@ -414,7 +454,8 @@ static int serial_probe(struct platform_device *pdev)
 	 */
 	init_waitqueue_head(&serial->wait);
 
-	// spin_lock_init(&serial->lock);
+	/** spinlock object is initialized */
+	spin_lock_init(&serial->lock);
 
 	// serial->dev = &pdev->dev;
 	// init_completion(&serial->txcomp);
@@ -451,6 +492,10 @@ static int serial_probe(struct platform_device *pdev)
 	reg_write(serial, (baud_divisor >> 8) & 0xff, UART_DLM);
 	reg_write(serial, UART_LCR_WLEN8, UART_LCR);
 	reg_write(serial, 0x00, UART_OMAP_MDR1);
+
+	/*
+	Up to this point, register access may not be locked because interrupts are
+	not enabled yet */
 
 	/* Clear UART internal FIFOs */
 	reg_write(serial, UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT, UART_FCR);
