@@ -228,3 +228,7 @@ interrupt kullanmak için "irq" numarasını bilmemiz gerekir ve bu device tree 
 linux kernel locking mekanizmalarını öğrendikten sonra serial driver içerisine shared resource'a yapılan erişimlerde concurrent access'i engellemiş olacağız. Lock'lamaz istediğimiz 2 kısım var. Bunlara farklı context'lerden erişim yapıldığı için (Interrupt Context ve Regular Process Context) lock'lama ihtiyacı duyarız.
     - Register Accesses
     - Buffer yönetimi için yaptığımız işlemler
+
+linux dma framework'ü öğrendikten sonra sürücümüze DMA desteği getireceğiz. dma desteği olan arayüzleri ilk yazmış olduklarımızı koruyarak devam edeceğiz. ikinci bir fops (file operations) tanımlayacağız.
+    - device tree içerisinde uart2 için atanmış (ya da hangi peripehral kullanılıyor ise) dma property'yi görebiliriz. örneğin, dma engine olarak `edma` (enhance DMA) olduğu gözükmektedir. Ve bu edma içerisinde bu uart2 için atanmış dma channel bilgisi de yer almaktadır. (`/arch/arm/boot/dts/ti/omap/am33xx-l4.dtsi` içerisinde uart2: serial@0 da gözükmektedir. bunun bazı property'sini override etmiştik hatırlarsak.)
+    - kendi yazdığımız sürücüye dma desteğinin eklenmesinin yanısıra UART peripheral'ı için de SoC seviyesinde konfigüre ederel DMA destekler hale getirmeliyiz.

@@ -57,18 +57,24 @@ buna benzer diğer durumlar sunumda açıklanmıştır. özel DMA api'leri içer
 cahceflush veyainvalidate gibi işlemleri explicit olarak sürücüde yapmayız.
 
 - Addressing Constraints
-    -Memory ve Device adresleri için genellikle `phys_addr_t` türünde fiziksel adresesahiptir.
+    -Memory ve Device adresleri için genellikle `phys_addr_t` türünde fiziksel adrese sahiptir.
     - CPU'larda memory'ye MMU(memory management unit) ile, Virtual Pointer'lar ile erişir. `void *`
     - DMA Controller, MMU kullanamadığı için sonucu olarak virtual adresleri dekullanmaz. dolayısı ile physical adres ya da IOMMU kullanmak zorundadır.
+    - genelde DMA'ler 32-bit adres olacağını varsayar. 64bit sistem olsa bile bazı peripheral'lar 32bit destekliyor olabilir. bu soc'da bulunan her device için farklıdır. Map işlemini bunu consider ederek yapmalıyız. bu durumla ilişkili olabilecek bazı performans sorunları yaşanabilir. bunu çözmek adına optimist buffer boyutunu iyi belirlemek gerekir.
 
 - Kernel APIs
     - `dma-mapping` API:
         - DMA buffer'larını allocate eder ve yönetir.
         - Coherency için generic interface'ler sağlar.
+        - buffer map işlemi için iki yol vardır
+            - Coherent Mapping: kernel'de buffer allocate eder ve bunu "coherent" memoryden alır. cache coherent adı da verilir. cache'i disable eder. descriptor'lar bu bölgeden olmalıdır. physical adreslerdir.
+            - Streaming Mapping: buffer'ımız var. başka bir yerde alınmış olabilir. bunu map'leyerek DMA için kullanabiliriz.
     - `dmaengine` API:
         - DMA controller'ı soyutlar. Generic fonksiyonları sağlar.
     - `dma-buf` API
         - kernel içerisinde cihazlar arası DMA buffer paylaşımını mümkün kılar. Graphic Kartı ve Display Controller arası buffer'ları paylaşır data kopyalamak yerine.
+
+
 
 User space'de bu bahsettiğimiz descriptor'lar, kullanılan buffer adresleri ya da sayısı vb kernel'deki oluşan olayları bilmek zorunda değildir. bilmez de.
 
@@ -82,7 +88,7 @@ void *                          /* Output: buffer address */
     dma_alloc_coherent(
     struct device *dev,         /* device structure, stores dma capabilities */
     size_t size,                /* Needed buffer size in bytes */
-    dma_addr_t *handle,         /* Output: DMA bus address. either physical or IOMMU */
+    dma_addr_t *handle,         /* Output Parameter: DMA bus address. either physical or IOMMU */
     gfp_t gfp                   /* Standard GFP flags */
 );
 
@@ -90,7 +96,14 @@ void dma_free_coherent(struct device *dev, size_t size, void *cpu_addr, dma_addr
 ```
     
 
-NOT: MMIO register'ları physical adrese sahip olduğunda bunun remapped edilmesi gerekir çünkü IO-MMU ile erişemeyiz. Örnek kod parçası:
+NOT: Birden fazla buffer'ı birleştirerek scatter-gather adı verilen yöntemle daha büyük boyutlu kopyalama işlemleri yapabiliriz.
+
+NOT: MMIO register'ları physical adrese sahip olduğunda bunun remapped edilmesi gerekir çünkü aksi halde IO-MMU ile erişemeyiz. IOMMU physical adresler ile çalışır. 
+
+CPU virtual addr  ──MMU──▶ Physical RAM ◀──IOMMU──  DMA addr
+
+
+Örnek kod parçası:
 
 ```
 #include <linux/dma-mapping.h>
@@ -108,11 +121,16 @@ dma_addr_t dma_map_resource(
 void dma_unmap_resource(struct device *dev, dma_addr_t handle, size_t size, enum dma_data_direction dir, unsigned long attrs);
 ```
 
+tüm DMA memory işlemleri sonrasında `int dma_mapping_error(struct device * dev, dma_addr_t dma_addr)` ile error check yapılması tavsiye edilir.
+
+
 - Starting DMA Transfers
     - If the device you’re writing a driver for is doing peripheral DMA, no external API is involved.
     
     - If it relies on an external DMA controller, you’ll need to
         1. Ask the hardware to use DMA, so that it will drive its request line
-        2. Use Linux dmaengine framework, especially its slave API
+        2. Use Linux **dmaengine framework**, especially its slave API
+
+**dmaengine framework:** slave api'ler sağlar ve soc'deki dma controller kullanımı için bu framework ve sağladığı apileri kullanırız. struct ve api detayları için sunum incelenmesi şiddetle tavsiye edilir! ayrıca serial driver içerisinde de örnek kullanımları görebiliriz.
 
 

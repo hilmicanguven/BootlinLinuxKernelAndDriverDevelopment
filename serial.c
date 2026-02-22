@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "linux/printk.h"
 #include <linux/completion.h>
-#include <linux/dma-mapping.h>
+#include <linux/dma-mapping.h> /* to access dma resource map api's*/
 #include <linux/atomic.h>
 #include <linux/fs.h> /* to access file operations struct*/
 #include <linux/dmaengine.h>
@@ -24,8 +24,11 @@
 /** @brief ioctl command to get counter of how many bytes written */
 #define IOCTL_CMD_SERIAL_GET_COUNTER 1
 
-// #define OMAP_UART_SCR_DMAMODE_CTL3 0x7
-// #define OMAP_UART_SCR_TX_TRIG_GRANU1 BIT(6)
+/**
+ * Register and Bit values to enable DMA on UART peripheral
+ */
+#define OMAP_UART_SCR_DMAMODE_CTL3 0x7
+#define OMAP_UART_SCR_TX_TRIG_GRANU1 BIT(6)
 
 /** @brief The size of UART Receive Buffer (bytes were read will be stored in this buffer) */
 #define SERIAL_BUFSIZE 16
@@ -45,7 +48,8 @@ struct serial_dev {
 	it is filled within interrupt handler. */
 	char rx_buf[SERIAL_BUFSIZE];
 	
-	// char tx_buf[SERIAL_BUFSIZE];
+	/** @brief used for dma operations */
+	char tx_buf[SERIAL_BUFSIZE];
 	
 	/** @brief The cursor of read buffer where last index that we read. used for implementing circular buffer */
 	unsigned int buf_rd;
@@ -61,10 +65,18 @@ struct serial_dev {
 	
 	/** @brief resource pointer to show register physical address of devices */
 	struct resource *res;
-	// struct device *dev;
-	// struct dma_chan *txchan;
-	// dma_addr_t fifo_dma_addr;
-	// bool txongoing;
+
+	/** @brief device structure comes from platform device. it is used for DMA address mappings */
+	struct device *dev;
+
+	/** @brief the dma channel used for serial tx operations. this channel is requested dma engine framework */
+	struct dma_chan *txchan;
+
+	/** @brief dma fifo buffer address used by dma apis. it is filled address that is mapped */
+	dma_addr_t fifo_dma_addr;
+
+	/** @brief The flag to show whether there is ongoing dma operation or not. if it is, wait until it is completed */
+	bool txongoing;
 	// struct completion txcomp;
 };
 
@@ -206,70 +218,77 @@ static ssize_t serial_write_pio(struct file *file, const char __user *buf, size_
 // 	complete(&serial->txcomp);
 // }
 
-// static ssize_t serial_write_dma(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
-// {
-// 	struct miscdevice *miscdev_ptr = file->private_data;
-// 	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
+static ssize_t serial_write_dma(struct file *file, const char __user *buf, size_t sz, loff_t *offs) 
+{
+	struct miscdevice *miscdev_ptr = file->private_data;
+	struct serial_dev *serial = container_of(miscdev_ptr, struct serial_dev, miscdev);
 	
-// 	unsigned long flags;
-// 	dma_addr_t dma_addr;
-// 	dma_cookie_t cookie;
-// 	size_t len;
-// 	int ret = 0;
-// 	struct dma_async_tx_descriptor *desc;
+	// flags for spinlock irq save and restore
+	unsigned long flags;
+	dma_addr_t dma_addr;
+	dma_cookie_t cookie;
+	// length of the transfer
+	size_t len;
+	int ret = 0;
+	struct dma_async_tx_descriptor *desc;
 
-// 	/* Prevent concurrent Tx */
-// 	spin_lock_irqsave(&serial->lock, flags);
-// 	if (serial->txongoing) {
-// 		spin_unlock_irqrestore(&serial->lock, flags);
-// 		return -EBUSY;
-// 	}
-// 	serial->txongoing = true;
-// 	spin_unlock_irqrestore(&serial->lock, flags);
-
-// 	len = min_t(size_t, SERIAL_BUFSIZE, sz);
-
-// 	ret = copy_from_user(serial->tx_buf, buf, len);
-// 	if (ret)
-// 		goto err;
-
-// 	dma_addr = dma_map_single(serial->dev, serial->tx_buf, len, DMA_TO_DEVICE);
-// 	if (dma_mapping_error(serial->dev, dma_addr))
-// 		goto err;
-
-// 	desc = dmaengine_prep_slave_single(serial->txchan, dma_addr, len, DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
-
-// 	if (!desc) {
-// 		dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
-// 		goto err;
-// 	}
-
-// 	desc->callback = serial_tx_done;
-// 	desc->callback_param = serial;
+	/* Prevent concurrent Tx */
+	spin_lock_irqsave(&serial->lock, flags);
 	
-// 	cookie = dmaengine_submit(desc);
+	if (serial->txongoing) {
+		spin_unlock_irqrestore(&serial->lock, flags);
+		return -EBUSY;
+	}
 
-// 	ret = dma_submit_error(cookie);
-// 	if (ret)
-// 		goto err;
+	serial->txongoing = true;
+	spin_unlock_irqrestore(&serial->lock, flags);
 
-// 	dma_async_issue_pending(serial->txchan);
+	// transfer len is either buffer length or user given sz 
+	len = min_t(size_t, SERIAL_BUFSIZE, sz);
 
-// 	wait_for_completion(&serial->txcomp);
+	// get user space buffer into driver buffer
+	ret = copy_from_user(serial->tx_buf, buf, len);
+	if (ret)
+		goto err;
 
-// 	dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
+	// there is a hw bug (specific to ti beaglebone/play SoCs) only for the first byte. therefore we need to send it manually
+	dma_addr = dma_map_single(serial->dev, serial->tx_buf, len, DMA_TO_DEVICE);
+	if (dma_mapping_error(serial->dev, dma_addr))
+		goto err;
 
-// 	spin_lock_irqsave(&serial->lock, flags);
-// 	serial->txongoing = false;
-// 	spin_unlock_irqrestore(&serial->lock, flags);
+	desc = dmaengine_prep_slave_single(serial->txchan, dma_addr, len, DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 
-// 	return len;
-// err:
-// 	spin_lock_irqsave(&serial->lock, flags);
-// 	serial->txongoing = false;
-// 	spin_unlock_irqrestore(&serial->lock, flags);
-// 	return ret;
-// }
+	if (!desc) {
+		dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
+		goto err;
+	}
+
+	desc->callback = serial_tx_done;
+	desc->callback_param = serial;
+	
+	cookie = dmaengine_submit(desc);
+
+	ret = dma_submit_error(cookie);
+	if (ret)
+		goto err;
+
+	dma_async_issue_pending(serial->txchan);
+
+	wait_for_completion(&serial->txcomp);
+
+	dma_unmap_single(serial->dev, dma_addr, len, DMA_TO_DEVICE);
+
+	spin_lock_irqsave(&serial->lock, flags);
+	serial->txongoing = false;
+	spin_unlock_irqrestore(&serial->lock, flags);
+
+	return len;
+err:
+	spin_lock_irqsave(&serial->lock, flags);
+	serial->txongoing = false;
+	spin_unlock_irqrestore(&serial->lock, flags);
+	return ret;
+}
 
 /** @brief The io control function to provide drivers specific commands */
 static long serial_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -351,6 +370,8 @@ static irqreturn_t serial_interrupt(int irq, void *dev_id)
 /**
  * @brief File operations for our serial device. this structure should have function pointers
  for file operations and their prototypes are defined in <linux/fs.h>
+
+ @note pio stands for polling io
  */
 static const struct file_operations serial_fops_pio = {
 	/** open function (default implemented) to this module is incremented counter of users number for this module
@@ -361,55 +382,75 @@ static const struct file_operations serial_fops_pio = {
 	.unlocked_ioctl = serial_ioctl,
 };
 
-// static const struct file_operations serial_fops_dma = {
-// 	.owner = THIS_MODULE,
-// 	.read = serial_read,
-// 	.write = serial_write_dma,
-// 	.unlocked_ioctl = serial_ioctl,
-// };
+/** @brief File operation with DMA support for our driver. */
+static const struct file_operations serial_fops_dma = {
+	.owner = THIS_MODULE,
+	.read = serial_read,
+	.write = serial_write_dma,
+	.unlocked_ioctl = serial_ioctl,
+};
 
-// static int serial_dma_setup(struct serial_dev *serial)
-// {
-// 	struct dma_slave_config txconf = {};
-// 	int ret;
 
-// 	serial->txchan = dma_request_chan(serial->dev, "tx");
-// 	if (IS_ERR(serial->txchan)) {
-// 		ret = PTR_ERR(serial->txchan);
-// 		serial->txchan = NULL;
-// 	}
+static int serial_dma_setup(struct serial_dev *serial)
+{
+	/** structure that will describe transfer */
+	struct dma_slave_config txconf = {};
+	int ret;
 
-// 	serial->fifo_dma_addr = dma_map_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0);
-
-// 	if (dma_mapping_error(serial->dev, serial->fifo_dma_addr))
-// 		goto out_chan;
-
-// 	txconf.direction = DMA_MEM_TO_DEV;
-// 	txconf.dst_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-// 	txconf.dst_addr = serial->fifo_dma_addr;
-
-// 	ret = dmaengine_slave_config(serial->txchan, &txconf);
-// 	if (ret)
-// 		goto out_unmap;
-
-// 	reg_write(serial, OMAP_UART_SCR_DMAMODE_CTL3 | OMAP_UART_SCR_TX_TRIG_GRANU1, UART_OMAP_SCR);
-
-// 	return 0;
-
-// out_unmap:
-// 	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
+	/*
+	dma channel requested by dma engine. 
+	*/
+	serial->txchan = dma_request_chan(serial->dev, "tx");
 	
-// out_chan:
-// 	dma_release_channel(serial->txchan);
-// 	return -ENODEV;
-// }
+	if (IS_ERR(serial->txchan)) 
+	{
+		// error pointer (may be special pointer encoded inside of linux, do not know!) returns in case of error
+		ret = PTR_ERR(serial->txchan);
+		serial->txchan = NULL;
+	}
 
-// static void serial_dma_cleanup(struct serial_dev *serial)
-// {
-// 	dmaengine_terminate_sync(serial->txchan);
-// 	dma_release_channel(serial->txchan);
-// 	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
-// }
+	/**
+	 * do mapping of whole register range into the device's dma address
+	 */
+	serial->fifo_dma_addr = dma_map_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0);
+
+	/* check if an error occur. if occured, goto error branch */
+	if (dma_mapping_error(serial->dev, serial->fifo_dma_addr))
+		goto out_chan;
+
+	// from memory to device (peripheral)
+	txconf.direction = DMA_MEM_TO_DEV;
+	// byte-by-byte transferred. one byte at a time because uart tx register has 1 byte width.
+	txconf.dst_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
+	txconf.dst_addr = serial->fifo_dma_addr;
+
+	// configure channel and transfer descriptor
+	ret = dmaengine_slave_config(serial->txchan, &txconf);
+	if (ret)
+		goto out_unmap;
+
+	// Enable UART peripheral to support DMA mode
+	reg_write(serial, OMAP_UART_SCR_DMAMODE_CTL3 | OMAP_UART_SCR_TX_TRIG_GRANU1, UART_OMAP_SCR);
+
+	return 0;
+
+out_unmap:
+	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
+	
+out_chan:
+	// branch jumped when channel is allocated but resource can not be mapped. release the channel
+	dma_release_channel(serial->txchan);
+	return -ENODEV;
+}
+
+/** @brief dma cleanup function called when driver module is removed */
+static void serial_dma_cleanup(struct serial_dev *serial)
+{
+	dmaengine_terminate_sync(serial->txchan);
+	dma_release_channel(serial->txchan);
+	// undo mapping registers' addresses of serial driver dma address pointer
+	dma_unmap_resource(serial->dev, serial->res->start + UART_TX * 4, 4, DMA_TO_DEVICE, 0); 
+}
 
 static int serial_probe(struct platform_device *pdev)
 {
@@ -457,7 +498,9 @@ static int serial_probe(struct platform_device *pdev)
 	/** spinlock object is initialized */
 	spin_lock_init(&serial->lock);
 
-	// serial->dev = &pdev->dev;
+	
+	serial->dev = &pdev->dev;
+	
 	// init_completion(&serial->txcomp);
 
 	/*
@@ -507,7 +550,7 @@ static int serial_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, serial);
 
 	/**
-	used to get resource of platform(resource points registers physical address)
+	used to get resource of platform (resource points registers physical address)
 	Memory Type of resource is selected with `IORESOURCE_MEM`, other option is interrupt resource named IRQ number
 	0 means the first resource described in dtsi file.
 	 */
@@ -526,11 +569,15 @@ static int serial_probe(struct platform_device *pdev)
 	
 	serial->miscdev.parent = &pdev->dev;
 
-	// ret = serial_dma_setup(serial);
-	// if (ret) 
+	/*
+	if dma setup worked, used operation with dma support.
+	otherwise, use polling ones without dma
+	*/
+	ret = serial_dma_setup(serial);
+	if (ret) 
 		serial->miscdev.fops = &serial_fops_pio;
-	// else
-	// 	serial->miscdev.fops = &serial_fops_dma;
+	else
+		serial->miscdev.fops = &serial_fops_dma;
 
 	return misc_register(&serial->miscdev);
 }
